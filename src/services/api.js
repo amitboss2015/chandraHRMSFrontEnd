@@ -3,8 +3,17 @@
 // Multi-tenant enabled
 // ===========================
 
-const API_BASE = 'http://localhost:8080/api';
-const DEFAULT_ORG_ID = 'ORG001';
+// Dynamically set API base URL based on current host
+const getApiBase = () => {
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8080/api';
+  }
+  return `http://${hostname}:8080/api`;
+};
+
+const API_BASE = getApiBase();
+const DEFAULT_ORG_ID = 'SASA001';
 
 /**
  * Get current tenant ID from:
@@ -90,20 +99,31 @@ async function fetchApi(url, options = {}) {
     credentials: 'include', // Include cookies for refresh token
   });
   
-  // Handle 401 Unauthorized
-  if (response.status === 401) {
+  // Handle 401 Unauthorized or 403 Forbidden (invalid/expired token)
+  if (response.status === 401 || response.status === 403) {
+    console.log(`🔒 Auth error (${response.status}), attempting token refresh...`);
+    
     // Try to refresh token
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       // Retry the request with new token
       headers['Authorization'] = `Bearer ${getAccessToken()}`;
       const retryResponse = await fetch(url, { ...options, headers, credentials: 'include' });
+      
+      // If still getting auth error after refresh, redirect to login
+      if (retryResponse.status === 401 || retryResponse.status === 403) {
+        console.log('🔒 Still getting auth error after refresh, redirecting to login');
+        handleUnauthorized();
+        throw new Error('Session expired. Please login again.');
+      }
+      
       if (!retryResponse.ok) {
         const errorText = await retryResponse.text();
         throw new Error(`API error: ${retryResponse.statusText} - ${errorText}`);
       }
       return retryResponse.json();
     } else {
+      console.log('🔒 Token refresh failed, redirecting to login');
       handleUnauthorized();
       throw new Error('Session expired. Please login again.');
     }
