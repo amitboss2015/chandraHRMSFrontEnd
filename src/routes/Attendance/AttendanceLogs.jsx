@@ -2,12 +2,27 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /** ======= CONFIG ======= */
-const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/,"") || "http://localhost:8080/api";
-const ORG_ID = import.meta.env.VITE_ORG_ID || "1";
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL.replace(/\/+$/,"");
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
+  return `http://${hostname}:8080/api`;
+};
+const API_BASE = getApiBase();
 
-/** JSON fetch with org header */
+const getToken = () => sessionStorage.getItem("hrms_access_token") || "";
+const getTenantId = () => localStorage.getItem("hrms_tenant_id") || "SASA001";
+
+/** JSON fetch with auth and tenant headers */
 async function fetchJson(path) {
-  const resp = await fetch(`${API_BASE}${path}`, { headers: { "X-Org-Id": ORG_ID } });
+  const token = getToken();
+  const resp = await fetch(`${API_BASE}${path}`, { 
+    headers: { 
+      "X-Tenant-Id": getTenantId(),
+      "X-Org-Id": getTenantId(),
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    } 
+  });
   if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
 }

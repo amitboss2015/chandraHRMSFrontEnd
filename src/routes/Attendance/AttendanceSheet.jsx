@@ -2,18 +2,70 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 /** ======= CONFIG ======= */
-const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/,"") || "http://localhost:8080/api";
-const ORG_ID = import.meta.env.VITE_ORG_ID || "1";
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/+$/,"");
+  }
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8080/api';
+  }
+  return `http://${hostname}:8080/api`;
+};
+const API_BASE = getApiBase();
 
-/** Simple JSON fetcher that adds org headers */
+const getToken = () => sessionStorage.getItem("hrms_access_token") || "";
+const getTenantId = () => localStorage.getItem("hrms_tenant_id") || "SASA001";
+
+/** Simple JSON fetcher that adds auth and tenant headers */
 async function fetchJson(path, options = {}) {
+  const token = getToken();
+  const tenantId = getTenantId();
+  
+  console.log(`📡 fetchJson: ${path}`, { 
+    hasToken: !!token, 
+    tokenPreview: token ? token.substring(0,50) + '...' : 'NONE',
+    tenantId 
+  });
+  
+  // If no token, redirect to login
+  if (!token) {
+    console.log('❌ No token available, redirecting to login');
+    window.location.href = '/login';
+    throw new Error('No authentication token');
+  }
+  
+  const headers = {
+    "X-Tenant-Id": tenantId,
+    // Note: Removed X-Org-Id as backend now uses TenantContext from JWT
+    "Authorization": `Bearer ${token}`,
+    ...(options.headers || {}),
+  };
+  
+  console.log('📤 Request headers:', Object.keys(headers));
+  
   const resp = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      "X-Org-Id": ORG_ID,
-      ...(options.headers || {}),
-    },
+    headers,
   });
+  
+  console.log(`📥 Response: ${path}`, { status: resp.status, ok: resp.ok });
+  
+  // Handle auth errors - but DON'T immediately redirect, let's debug first
+  if (resp.status === 401 || resp.status === 403) {
+    console.log(`🔒 Auth error (${resp.status}) for ${path}`);
+    console.log('🔍 Token that was sent:', token ? token.substring(0, 50) + '...' : 'NONE');
+    console.log('🔍 Response headers:', [...resp.headers.entries()]);
+    const errorText = await resp.text();
+    console.log('🔍 Response body:', errorText);
+    
+    // DON'T redirect for now - just throw error so we can debug
+    // sessionStorage.removeItem('hrms_access_token');
+    // localStorage.removeItem('hrms_user');
+    // window.location.href = '/login';
+    throw new Error(`Auth error ${resp.status}: ${errorText || 'No details'}`);
+  }
+  
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(text || `HTTP ${resp.status}`);
@@ -29,6 +81,11 @@ const today = new Date();
 
 function AttendanceSheet() {
   const navigate = useNavigate();
+  
+  // Debug: Log component mount and token status
+  console.log('🎯 AttendanceSheet MOUNTED');
+  console.log('🎯 Token status:', sessionStorage.getItem("hrms_access_token") ? 'Present' : 'MISSING');
+  console.log('🎯 User status:', localStorage.getItem("hrms_user") ? 'Present' : 'MISSING');
 
   const [activeTab, setActiveTab] = useState("monthly"); // Default to monthly report
   const [month, setMonth] = useState(7); // July as default to match your test data
@@ -61,7 +118,11 @@ function AttendanceSheet() {
       form.append("year", String(year));
       const resp = await fetch(`${API_BASE}/attendance/import`, {
         method: "POST",
-        headers: { "X-Org-Id": ORG_ID },
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "X-Org-Id": getTenantId(),
+          ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
+        },
         body: form,
       });
       if (!resp.ok) throw new Error(await resp.text());
@@ -88,7 +149,11 @@ function AttendanceSheet() {
     try {
       const resp = await fetch(`${API_BASE}/attendance/import/batches/${batchId}`, {
         method: "DELETE",
-        headers: { "X-Org-Id": ORG_ID },
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "X-Org-Id": getTenantId(),
+          ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
+        },
       });
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
@@ -117,9 +182,15 @@ function AttendanceSheet() {
 
   // Load employees list on mount
   useEffect(() => {
+    console.log('🚀 AttendanceSheet useEffect - about to fetch employees');
+    console.log('🚀 Token at fetch time:', sessionStorage.getItem("hrms_access_token") ? 'Present' : 'MISSING');
+    
     fetchJson("/attendance/employees")
       .then(data => setEmployees(Array.isArray(data) ? data : []))
-      .catch(() => setEmployees([]));
+      .catch((err) => {
+        console.error('❌ Failed to fetch employees:', err);
+        setEmployees([]);
+      });
   }, []);
 
   // Handle opening the manual punch modal
@@ -149,7 +220,12 @@ function AttendanceSheet() {
       
       const response = await fetch(`${API_BASE}/attendance/day/${selectedLogForEdit.dayId}/manual-punch?${params.toString()}`, {
         method: 'PUT',
-        headers: { 'X-Org-Id': ORG_ID, 'X-User': 'admin' }
+        headers: { 
+          'X-Tenant-Id': getTenantId(),
+          'X-Org-Id': getTenantId(), 
+          'X-User': 'admin',
+          ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
+        }
       });
       
       if (!response.ok) throw new Error(await response.text());
