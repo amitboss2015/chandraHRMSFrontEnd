@@ -1,18 +1,85 @@
 // ===========================
 // Centralized API Service
+// Multi-tenant enabled
 // ===========================
 
 const API_BASE = 'http://localhost:8080/api';
 const DEFAULT_ORG_ID = 'ORG001';
 
-// Helper for fetch with error handling
+/**
+ * Get current tenant ID from:
+ * 1. Local storage (if set by admin)
+ * 2. URL subdomain (for production)
+ * 3. Default fallback
+ */
+function getCurrentTenantId() {
+  // Check local storage first (for development/admin override)
+  const storedTenant = localStorage.getItem('hrms_tenant_id');
+  if (storedTenant) return storedTenant;
+  
+  // Try to extract from subdomain (production)
+  const hostname = window.location.hostname;
+  const parts = hostname.split('.');
+  if (parts.length >= 2) {
+    const subdomain = parts[0].toLowerCase();
+    // Skip common non-tenant subdomains
+    if (!['www', 'api', 'admin', 'app', 'localhost', '127'].includes(subdomain)) {
+      return subdomain;
+    }
+  }
+  
+  return DEFAULT_ORG_ID;
+}
+
+/**
+ * Set tenant ID (for admin switching between tenants)
+ */
+export function setTenantId(tenantId) {
+  if (tenantId) {
+    localStorage.setItem('hrms_tenant_id', tenantId);
+  } else {
+    localStorage.removeItem('hrms_tenant_id');
+  }
+}
+
+/**
+ * Get tenant ID (exported for use in components)
+ */
+export function getTenantId() {
+  return getCurrentTenantId();
+}
+
+// Helper for fetch with error handling and tenant header
 async function fetchApi(url, options = {}) {
+  const tenantId = getCurrentTenantId();
+  
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      'X-Tenant-Id': tenantId,  // Multi-tenancy header
       ...options.headers,
     },
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error: ${response.statusText} - ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetch with FormData (for file uploads) - includes tenant header
+ */
+async function fetchFormData(url, formData, method = 'POST') {
+  const tenantId = getCurrentTenantId();
+  
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'X-Tenant-Id': tenantId,  // Multi-tenancy header
+    },
+    body: formData,
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -237,10 +304,7 @@ export const attendanceApi = {
   import: (file, month, year) => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch(`${API_BASE}/attendance/import?month=${month}&year=${year}`, { 
-      method: 'POST', 
-      body: formData 
-    }).then(r => r.json());
+    return fetchFormData(`${API_BASE}/attendance/import?month=${month}&year=${year}`, formData);
   },
   
   getLogs: (year, month, empId = null, empCode = null) => {
@@ -261,6 +325,27 @@ export const attendanceApi = {
     fetchApi(`${API_BASE}/attendance/import/batches/${batchId}`, { method: 'DELETE' }),
 };
 
+// =========== TENANT MANAGEMENT ===========
+export const tenantApi = {
+  // Get current tenant info
+  getCurrent: () => fetchApi(`${API_BASE}/tenants/current`),
+  
+  // Get all tenants (admin only)
+  getAll: () => fetchApi(`${API_BASE}/tenants`),
+  
+  // Get tenant by ID
+  getById: (id) => fetchApi(`${API_BASE}/tenants/${id}`),
+  
+  // Create new tenant (super admin)
+  create: (data) => fetchApi(`${API_BASE}/tenants`, { method: 'POST', body: JSON.stringify(data) }),
+  
+  // Update tenant
+  update: (id, data) => fetchApi(`${API_BASE}/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  
+  // Activate/Deactivate
+  setActive: (id, active) => fetchApi(`${API_BASE}/tenants/${id}/active?active=${active}`, { method: 'PUT' }),
+};
+
 export default {
   employee: employeeApi,
   loan: loanApi,
@@ -269,4 +354,8 @@ export default {
   report: reportApi,
   shift: shiftApi,
   attendance: attendanceApi,
+  tenant: tenantApi,
+  // Utilities
+  getTenantId,
+  setTenantId,
 };
