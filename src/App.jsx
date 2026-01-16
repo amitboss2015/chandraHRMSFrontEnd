@@ -26,6 +26,7 @@ import LeaveTypes from "./routes/Leaves/LeaveTypes";
 import MarkLeave from "./routes/Leaves/MarkLeave";
 import LeaveManagement from "./routes/Leaves/LeaveManagement";
 import HolidayManagement from "./routes/Settings/HolidayManagement";
+import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
 
 // Main Layout Component with responsive sidebar
 function MainLayout({ children }) {
@@ -82,6 +83,8 @@ function App() {
                     <Route path="/loans" element={<Loans />} />
                     <Route path="/reports/*" element={<Reports />} />
                     <Route path="/holidays" element={<HolidayManagement />} />
+                    <Route path="/settings/holidays" element={<HolidayManagement />} />
+                    <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
                   </Routes>
                 </MainLayout>
               </ProtectedRoute>

@@ -19,7 +19,14 @@ const menuItems = [
   { path: "/payroll", label: "Payroll", icon: "💰" },
   { path: "/loans", label: "Loans", icon: "💳" },
   { path: "/reports", label: "Reports", icon: "📈" },
-  { path: "/holidays", label: "Holidays", icon: "🎉" },
+  { 
+    label: "Settings", 
+    icon: "⚙️", 
+    children: [
+      { path: "/holidays", label: "Holidays" },
+      { path: "/settings/salary-overtime", label: "Salary & OT Rules" },
+    ]
+  },
 ];
 
 function Sidebar({ isOpen, onClose }) {
