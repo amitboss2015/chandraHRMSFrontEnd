@@ -1,0 +1,28 @@
+// Exact column order from your Excel template
+export const TEMPLATE_COLUMNS = [
+  "Emp Code",
+  "First Name",
+  "Last Name",
+  "Employment Type",
+  "Department",
+  "Designation",
+  "Shift(s)",
+  "Join Date",
+  "Status",
+  "Salary Basis",
+  "Base Salary",
+  "Hourly Rate",
+  "Email",
+  "Phone",
+  "Current Address",
+  "City",
+  "State",
+  "Pincode",
+  "Aadhaar Number",
+  "PAN Number",
+  "Bank Account Number",
+  "IFSC Code",
+  "Emergency Contact Name",
+  "Emergency Contact Phone",
+  // add all the remaining columns that exist in your template
+];
