@@ -1,16 +1,23 @@
-// Login.jsx - Modern login page with responsive design
-import React, { useState } from 'react';
+// Login.jsx - Modern login page with JWT authentication
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 function Login() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,13 +25,13 @@ function Login() {
     setLoading(true);
     
     try {
-      await new Promise(r => setTimeout(r, 500)); // Small delay for UX
-      if (login(username, password)) {
+      const result = await login(email, password);
+      if (result.success) {
         navigate('/');
       } else {
-        setError('Invalid username or password');
+        setError(result.error || 'Invalid email or password');
       }
-    } catch {
+    } catch (err) {
       setError('Login failed. Please try again.');
     } finally {
       setLoading(false);
@@ -62,16 +69,16 @@ function Login() {
               </div>
             )}
 
-            {/* Username */}
+            {/* Email */}
             <div>
-              <label className="block text-white/70 text-sm mb-2">Username</label>
+              <label className="block text-white/70 text-sm mb-2">Email</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">👤</span>
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">📧</span>
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email"
                   required
                   className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                 />

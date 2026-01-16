@@ -49,18 +49,66 @@ export function getTenantId() {
   return getCurrentTenantId();
 }
 
-// Helper for fetch with error handling and tenant header
+/**
+ * Get access token from session storage
+ */
+function getAccessToken() {
+  return sessionStorage.getItem('hrms_access_token');
+}
+
+/**
+ * Handle 401 errors - redirect to login
+ */
+function handleUnauthorized() {
+  sessionStorage.removeItem('hrms_access_token');
+  localStorage.removeItem('hrms_user');
+  // Redirect to login if not already there
+  if (!window.location.pathname.includes('/login')) {
+    window.location.href = '/login';
+  }
+}
+
+// Helper for fetch with error handling, auth, and tenant header
 async function fetchApi(url, options = {}) {
   const tenantId = getCurrentTenantId();
+  const accessToken = getAccessToken();
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Tenant-Id': tenantId,
+    ...options.headers,
+  };
+  
+  // Add Authorization header if token exists
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
   
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tenant-Id': tenantId,  // Multi-tenancy header
-      ...options.headers,
-    },
+    headers,
+    credentials: 'include', // Include cookies for refresh token
   });
+  
+  // Handle 401 Unauthorized
+  if (response.status === 401) {
+    // Try to refresh token
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Retry the request with new token
+      headers['Authorization'] = `Bearer ${getAccessToken()}`;
+      const retryResponse = await fetch(url, { ...options, headers, credentials: 'include' });
+      if (!retryResponse.ok) {
+        const errorText = await retryResponse.text();
+        throw new Error(`API error: ${retryResponse.statusText} - ${errorText}`);
+      }
+      return retryResponse.json();
+    } else {
+      handleUnauthorized();
+      throw new Error('Session expired. Please login again.');
+    }
+  }
+  
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`API error: ${response.statusText} - ${errorText}`);
@@ -69,18 +117,58 @@ async function fetchApi(url, options = {}) {
 }
 
 /**
- * Fetch with FormData (for file uploads) - includes tenant header
+ * Try to refresh access token
+ */
+async function tryRefreshToken() {
+  try {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': getCurrentTenantId(),
+      },
+      credentials: 'include',
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      sessionStorage.setItem('hrms_access_token', data.accessToken);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Token refresh failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch with FormData (for file uploads) - includes auth and tenant header
  */
 async function fetchFormData(url, formData, method = 'POST') {
   const tenantId = getCurrentTenantId();
+  const accessToken = getAccessToken();
+  
+  const headers = {
+    'X-Tenant-Id': tenantId,
+  };
+  
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
   
   const response = await fetch(url, {
     method,
-    headers: {
-      'X-Tenant-Id': tenantId,  // Multi-tenancy header
-    },
+    headers,
     body: formData,
+    credentials: 'include',
   });
+  
+  if (response.status === 401) {
+    handleUnauthorized();
+    throw new Error('Session expired. Please login again.');
+  }
+  
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`API error: ${response.statusText} - ${errorText}`);
