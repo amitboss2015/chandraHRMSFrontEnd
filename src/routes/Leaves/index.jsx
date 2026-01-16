@@ -6,7 +6,7 @@ import LeaveBalances from "./LeaveBalances";
 import MarkLeave from "./MarkLeave";
 
 export default function LeavePage({ orgId: propOrgId }) {
-  const orgId = propOrgId || localStorage.getItem("orgId") || "ORG1";
+  const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
   const [tab, setTab] = useState("mark"); // "mark" | "balances" | "types" | "calendar"
 
   const TabBtn = ({ id, children, icon }) => (

@@ -1,14 +1,24 @@
 // ShiftAssign.jsx - User-friendly shift assignment UI
 import React, { useState, useEffect, useMemo } from "react";
 
-const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-  localStorage.getItem("baseUrl") ||
-  "http://localhost:8080/api";
+const getApiBase = () => {
+  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+  if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
+  return `http://${hostname}:8080/api`;
+};
+const API_BASE = getApiBase();
+
+const getTenantId = () =>
+  localStorage.getItem("hrms_tenant_id") || "SASA001";
 
 const authHeaders = () => {
-  const t = localStorage.getItem("token") || "";
-  const h = { "Content-Type": "application/json" };
+  const t = sessionStorage.getItem("hrms_access_token") || localStorage.getItem("token") || "";
+  const h = { 
+    "Content-Type": "application/json",
+    "X-Tenant-Id": getTenantId()
+  };
   if (t) h.Authorization = `Bearer ${t}`;
   return h;
 };

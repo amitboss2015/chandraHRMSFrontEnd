@@ -8,13 +8,21 @@ function normalizeBase(u) {
   return u;
 }
 
-// Resolve API_BASE once
-export const API_BASE =
-  normalizeBase(
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-    localStorage.getItem("baseUrl") ||
-    "http://localhost:8080/api"
-  );
+// Resolve API_BASE dynamically based on hostname
+const getApiBase = () => {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) {
+    return normalizeBase(import.meta.env.VITE_API_BASE_URL);
+  }
+  if (localStorage.getItem("baseUrl")) {
+    return normalizeBase(localStorage.getItem("baseUrl"));
+  }
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8080/api';
+  }
+  return `http://${hostname}:8080/api`;
+};
+export const API_BASE = getApiBase();
 
 async function parseSmart(res) {
   const ct = res.headers.get("content-type") || "";
@@ -41,19 +49,41 @@ async function parseSmart(res) {
   }
 }
 
+const getToken = () => sessionStorage.getItem('hrms_access_token') || '';
+const getTenantId = () => localStorage.getItem('hrms_tenant_id') || 'SASA001';
+
 async function request(path, { method = "GET", body, headers } = {}) {
   const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const token = getToken();
+  
+  // If no token, redirect to login
+  if (!token) {
+    console.log('❌ No token available, redirecting to login');
+    window.location.href = '/login';
+    throw new Error('No authentication token');
+  }
+  
   const res = await fetch(url, {
     method,
     headers: {
       ...(body && !(body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      "X-Tenant-Id": getTenantId(),
+      "Authorization": `Bearer ${token}`,
       ...headers,
     },
     body: body && !(body instanceof FormData) ? JSON.stringify(body) : body,
-    // If your backend uses session/JWT cookies, enable credentials
-    // credentials: "include",
-    // mode: "cors", // usually default in browsers; keep if you need it explicit
+    credentials: "include",
   });
+  
+  // Handle auth errors - redirect to login
+  if (res.status === 401 || res.status === 403) {
+    console.log(`🔒 Auth error (${res.status}) - session expired`);
+    sessionStorage.removeItem('hrms_access_token');
+    localStorage.removeItem('hrms_user');
+    window.location.href = '/login';
+    throw new Error('Session expired. Please login again.');
+  }
+  
   return parseSmart(res);
 }
 
@@ -91,87 +121,60 @@ export function deactivateLeaveType(id) {
 
 // save ➜ POST /api/leave/admin/mark  (without previewOnly or false)
 export async function markLeave(body) {
-  const res = await fetch(`${API_BASE}/leave/admin/mark`, {
+  return request('/leave/admin/mark', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, previewOnly: false }),
+    body: { ...body, previewOnly: false },
   });
-  if (!res.ok) throw new Error(`${res.status} : ${res.statusText}`);
-  return res.json();
 }
 
 // preview ➜ POST /api/leave/admin/mark  (with previewOnly=true)
 export async function previewMarkLeave(body) {
-  const res = await fetch(`${API_BASE}/leave/admin/mark`, {
+  return request('/leave/admin/mark', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, previewOnly: true }),
+    body: { ...body, previewOnly: true },
   });
-  if (!res.ok) throw new Error(`${res.status} : ${res.statusText}`);
-  return res.json();
 }
 
 export async function listEmployees() {
-  const res = await fetch(`${API_BASE}/employees`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json(); // expect [{code, name, ...}]
+  return request('/employees');
 }
 
 // list leaves for one employee (shown under the form)
 export async function listEmployeeLeaves(orgId, empId) {
   const id = (empId ?? "").trim();
   if (!id || id === "\\") return [];           // <-- guard bogus value
-
-  const url = `${API_BASE}/leave/admin/employee/${encodeURIComponent(id)}/leaves` +
-              `?orgId=${encodeURIComponent(orgId)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return request(`/leave/admin/employee/${encodeURIComponent(id)}/leaves?orgId=${encodeURIComponent(orgId)}`);
 }
 
 /* ---------- Leave Balances API ---------- */
 
 // Get all leave balances for an employee for a year
 export async function getBalances(orgId, empId, year, month) {
-  let url = `${API_BASE}/leave/balances/${encodeURIComponent(empId)}?orgId=${encodeURIComponent(orgId)}&year=${year}`;
+  let path = `/leave/balances/${encodeURIComponent(empId)}?orgId=${encodeURIComponent(orgId)}&year=${year}`;
   if (month) {
-    url += `&month=${month}`;
+    path += `&month=${month}`;
   }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return request(path);
 }
 
 // Get balance for a specific leave type
 export async function getBalanceForType(orgId, empId, leaveTypeId, year, month) {
-  const url = `${API_BASE}/leave/balances/${encodeURIComponent(empId)}/type/${leaveTypeId}?orgId=${encodeURIComponent(orgId)}&year=${year}&month=${month}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return request(`/leave/balances/${encodeURIComponent(empId)}/type/${leaveTypeId}?orgId=${encodeURIComponent(orgId)}&year=${year}&month=${month}`);
 }
 
 // Close month for leave processing
 export async function closeMonth(orgId, year, month) {
-  const url = `${API_BASE}/leave/close/month?orgId=${encodeURIComponent(orgId)}&year=${year}&month=${month}`;
-  const res = await fetch(url, { method: "POST" });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return request(`/leave/close/month?orgId=${encodeURIComponent(orgId)}&year=${year}&month=${month}`, { method: "POST" });
 }
 
 // Close year for leave processing
 export async function closeYear(orgId, year) {
-  const url = `${API_BASE}/leave/close/year?orgId=${encodeURIComponent(orgId)}&year=${year}`;
-  const res = await fetch(url, { method: "POST" });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return request(`/leave/close/year?orgId=${encodeURIComponent(orgId)}&year=${year}`, { method: "POST" });
 }
 
 // Cancel a leave
 export async function cancelLeave(leaveId, reason) {
-  const url = `${API_BASE}/leave/admin/${leaveId}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`;
-  const res = await fetch(url, { method: "DELETE" });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.text();
+  return request(`/leave/admin/${leaveId}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`, { method: "DELETE" });
 }
 
 /* ---------- Generic helpers if you still need them ---------- */

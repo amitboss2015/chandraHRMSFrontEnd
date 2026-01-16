@@ -13,7 +13,7 @@ function HolidayManagement() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const [newHoliday, setNewHoliday] = useState({
-    orgId: 'ORG001',
+    orgId: 'SASA001',
     name: '',
     holidayDate: '',
     description: '',
@@ -37,8 +37,8 @@ function HolidayManagement() {
     try {
       setLoading(true);
       const [holidaysData, weeklyOffData] = await Promise.all([
-        holidayApi.getAll('ORG001', selectedYear),
-        holidayApi.getWeeklyOff('ORG001')
+        holidayApi.getAll('SASA001', selectedYear),
+        holidayApi.getWeeklyOff('SASA001')
       ]);
       setHolidays(holidaysData);
       setWeeklyOffs(weeklyOffData);
@@ -62,7 +62,7 @@ function HolidayManagement() {
       setShowAddModal(false);
       setEditingHoliday(null);
       setNewHoliday({
-        orgId: 'ORG001',
+        orgId: 'SASA001',
         name: '',
         holidayDate: '',
         description: '',
@@ -104,7 +104,7 @@ function HolidayManagement() {
   const handleSaveWeeklyOff = async (empType, days, alternateSat) => {
     try {
       await holidayApi.saveWeeklyOff({
-        orgId: 'ORG001',
+        orgId: 'SASA001',
         employmentType: empType,
         weeklyOffDays: days,
         alternateSaturdayRule: alternateSat

@@ -1,21 +1,31 @@
 // Dashboard.jsx - Impressive dashboard with charts and critical info
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
-const API_BASE =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
-  localStorage.getItem('baseUrl') ||
-  'http://localhost:8080/api';
+const getApiBase = () => {
+  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+  if (localStorage.getItem('baseUrl')) return localStorage.getItem('baseUrl');
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
+  return `http://${hostname}:8080/api`;
+};
+const API_BASE = getApiBase();
 
 const getToken = () =>
+  sessionStorage.getItem('hrms_access_token') ||
   localStorage.getItem('token') ||
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_TOKEN) ||
   '';
+
+const getTenantId = () =>
+  localStorage.getItem('hrms_tenant_id') || 'SASA001';
 
 const fetchApi = async (url) => {
   try {
     const res = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
+        'X-Tenant-Id': getTenantId(),
         ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
       },
     });
@@ -384,7 +394,7 @@ function SummaryRow({ label, value, total, color }) {
   );
 }
 
-// Quick Action Button
+// Quick Action Button - Using Link instead of <a> to prevent full page reload
 function QuickAction({ href, icon, label, color }) {
   const colors = {
     blue: 'hover:bg-blue-50 hover:border-blue-200',
@@ -396,13 +406,13 @@ function QuickAction({ href, icon, label, color }) {
   };
 
   return (
-    <a
-      href={href}
+    <Link
+      to={href}
       className={`flex flex-col items-center justify-center p-3 md:p-4 border rounded-xl transition-all ${colors[color]} active:scale-95`}
     >
       <span className="text-2xl mb-1">{icon}</span>
       <span className="text-xs text-slate-600 text-center">{label}</span>
-    </a>
+    </Link>
   );
 }
 

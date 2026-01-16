@@ -12,7 +12,7 @@ import {
 import Field from "../../components/Field";
 
 export default function MarkLeave({ orgId: propOrgId }) {
-  const orgId = propOrgId || localStorage.getItem("orgId") || "ORG1";
+  const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
 
   const [types, setTypes] = useState([]);
   const [employees, setEmployees] = useState([]);

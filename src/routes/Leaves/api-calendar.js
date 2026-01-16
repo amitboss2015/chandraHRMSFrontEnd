@@ -1,12 +1,22 @@
 // src/routes/Leave/api-calendar.js
 import { API_BASE } from "./api"; // same file that LeaveTypes/MarkLeave use
 
+const getToken = () => sessionStorage.getItem('hrms_access_token') || '';
+const getTenantId = () => localStorage.getItem('hrms_tenant_id') || 'SASA001';
+
 async function request(path, opts = {}) {
   const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const token = getToken();
   const res = await fetch(url, {
     method: opts.method || "GET",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: { 
+      "Content-Type": "application/json",
+      "X-Tenant-Id": getTenantId(),
+      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      ...(opts.headers || {}) 
+    },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
+    credentials: "include",
   });
   const text = await res.text();
   const json = (res.headers.get("content-type") || "").includes("application/json")

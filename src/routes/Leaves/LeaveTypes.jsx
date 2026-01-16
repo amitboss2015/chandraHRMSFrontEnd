@@ -14,7 +14,7 @@ const CONSUME = ["MONTHLY_THEN_ANNUAL", "ANNUAL_THEN_MONTHLY"];
 const MIN_UNITS = ["DAY", "HALF", "HOUR"];
 
 export default function LeaveTypes({ orgId: propOrgId }) {
-  const orgId = propOrgId || localStorage.getItem("orgId") || "ORG1";
+  const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

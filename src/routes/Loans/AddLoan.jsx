@@ -11,7 +11,7 @@ function AddLoan({ onSuccess }) {
   const [message, setMessage] = useState(null);
 
   const [formData, setFormData] = useState({
-    orgId: 'ORG001',
+    orgId: 'SASA001',
     empId: '',
     loanType: 'PERSONAL',
     principalAmount: '',
@@ -110,7 +110,7 @@ function AddLoan({ onSuccess }) {
       
       // Reset form
       setFormData({
-        orgId: 'ORG001',
+        orgId: 'SASA001',
         empId: '',
         loanType: 'PERSONAL',
         principalAmount: '',
@@ -298,7 +298,7 @@ function AddLoan({ onSuccess }) {
             type="button"
             onClick={() => {
               setFormData({
-                orgId: 'ORG001',
+                orgId: 'SASA001',
                 empId: '',
                 loanType: 'PERSONAL',
                 principalAmount: '',

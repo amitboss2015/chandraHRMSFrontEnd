@@ -7,7 +7,7 @@ import Field from "../../components/Field";
 const CATEGORIES = ["PUBLIC", "OPTIONAL", "COMPANY"];
 
 export default function LeaveCalendar({ orgId: propOrgId }) {
-  const orgId = propOrgId || localStorage.getItem("orgId") || "ORG1"; // like other pages
+  const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001"; // like other pages
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const [rows, setRows] = useState([]);

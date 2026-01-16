@@ -2,10 +2,28 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { listEmployees } from "./api";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
+  return `http://${hostname}:8080/api`;
+};
+const API_BASE = getApiBase();
+
+const getToken = () => sessionStorage.getItem("hrms_access_token") || "";
+const getTenantId = () => localStorage.getItem("hrms_tenant_id") || "SASA001";
+
+const authHeaders = () => {
+  const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    "X-Tenant-Id": getTenantId(),
+    ...(token ? { "Authorization": `Bearer ${token}` } : {})
+  };
+};
 
 export default function LeaveReports({ orgId: propOrgId }) {
-  const orgId = propOrgId || localStorage.getItem("orgId") || "ORG1";
+  const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
 
   const [reportType, setReportType] = useState("date-range"); // date-range | employee | daily
   const [loading, setLoading] = useState(false);
@@ -51,7 +69,8 @@ export default function LeaveReports({ orgId: propOrgId }) {
     setError(null);
     try {
       const res = await fetch(
-        `${API_BASE}/leave/reports/date-range?orgId=${orgId}&fromDate=${fromDate}&toDate=${toDate}`
+        `${API_BASE}/leave/reports/date-range?orgId=${orgId}&fromDate=${fromDate}&toDate=${toDate}`,
+        { headers: authHeaders() }
       );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -74,7 +93,8 @@ export default function LeaveReports({ orgId: propOrgId }) {
     setError(null);
     try {
       const res = await fetch(
-        `${API_BASE}/leave/reports/employee?orgId=${orgId}&empId=${selectedEmployee}&fromDate=${fromDate}&toDate=${toDate}`
+        `${API_BASE}/leave/reports/employee?orgId=${orgId}&empId=${selectedEmployee}&fromDate=${fromDate}&toDate=${toDate}`,
+        { headers: authHeaders() }
       );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -93,7 +113,8 @@ export default function LeaveReports({ orgId: propOrgId }) {
     setError(null);
     try {
       const res = await fetch(
-        `${API_BASE}/leave/reports/daily?orgId=${orgId}&fromDate=${fromDate}&toDate=${toDate}`
+        `${API_BASE}/leave/reports/daily?orgId=${orgId}&fromDate=${fromDate}&toDate=${toDate}`,
+        { headers: authHeaders() }
       );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();

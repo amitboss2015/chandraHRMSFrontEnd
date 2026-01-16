@@ -19,7 +19,7 @@ function LoanList() {
   const loadLoans = async () => {
     try {
       setLoading(true);
-      const data = await loanApi.getAll('ORG001', statusFilter || null);
+      const data = await loanApi.getAll('SASA001', statusFilter || null);
       setLoans(data);
     } catch (error) {
       console.error('Failed to load loans:', error);
