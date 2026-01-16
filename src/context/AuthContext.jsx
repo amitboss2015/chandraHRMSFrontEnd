@@ -1,9 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-const API_BASE = 'http://localhost:8080/api';
+// Dynamically set API base URL based on current host
+const getApiBase = () => {
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8080/api';
+  }
+  return `http://${hostname}:8080/api`;
+};
+
+const API_BASE = getApiBase();
 
 const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
+
+// Export API_BASE for use in other files
+export { API_BASE };
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -12,7 +24,7 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
 
   // Get tenant ID from localStorage or subdomain
-  const getTenantId = () => {
+  const getTenantId = useCallback(() => {
     const stored = localStorage.getItem('hrms_tenant_id');
     if (stored) return stored;
     
@@ -21,63 +33,52 @@ export function AuthProvider({ children }) {
     if (parts.length >= 2 && !['www', 'localhost', '127'].includes(parts[0])) {
       return parts[0];
     }
-    return 'ORG001';
-  };
-
-  // API call helper with auth
-  const authFetch = useCallback(async (url, options = {}) => {
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-Tenant-Id': getTenantId(),
-      ...options.headers,
-    };
-    
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-
-    const response = await fetch(url, { ...options, headers, credentials: 'include' });
-    return response;
-  }, [accessToken]);
-
-  // Check if user is authenticated on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const storedUser = localStorage.getItem('hrms_user');
-      const storedToken = sessionStorage.getItem('hrms_access_token');
-      
-      if (storedUser && storedToken) {
-        try {
-          // Verify token is still valid
-          const response = await fetch(`${API_BASE}/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${storedToken}`,
-              'X-Tenant-Id': getTenantId(),
-            },
-            credentials: 'include',
-          });
-
-          if (response.ok) {
-            const userData = await response.json();
-            setUser(userData);
-            setAccessToken(storedToken);
-          } else {
-            // Token expired, try refresh
-            await refreshToken();
-          }
-        } catch (err) {
-          console.error('Auth check failed:', err);
-          clearAuth();
-        }
-      }
-      setLoading(false);
-    };
-
-    checkAuth();
+    return 'SASA001';
   }, []);
 
-  // Refresh access token
-  const refreshToken = async () => {
+  // Clear all auth data and redirect to login
+  const clearAuth = useCallback((redirect = false) => {
+    console.log('🔓 Clearing auth data...', new Error().stack);
+    setUser(null);
+    setAccessToken(null);
+    localStorage.removeItem('hrms_user');
+    sessionStorage.removeItem('hrms_access_token');
+    
+    if (redirect && window.location.pathname !== '/login') {
+      console.log('🔄 Redirecting to login...');
+      window.location.href = '/login';
+    }
+  }, []);
+
+  // Validate token by making a test API call
+  const validateToken = useCallback(async (token) => {
+    console.log('🔍 validateToken called with token:', token ? token.substring(0, 30) + '...' : 'NONE');
+    try {
+      const response = await fetch(`${API_BASE}/employees?_limit=1`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Tenant-Id': getTenantId(),
+        },
+      });
+      
+      console.log('🔍 validateToken response:', response.status);
+      
+      if (response.status === 401 || response.status === 403) {
+        console.log('❌ Token validation failed - token is invalid or expired');
+        return false;
+      }
+      
+      console.log('✅ Token is valid');
+      return true;
+    } catch (err) {
+      console.error('Token validation error:', err);
+      return false;
+    }
+  }, [getTenantId]);
+
+  // Refresh access token using refresh token cookie
+  const refreshToken = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
@@ -85,7 +86,7 @@ export function AuthProvider({ children }) {
           'Content-Type': 'application/json',
           'X-Tenant-Id': getTenantId(),
         },
-        credentials: 'include', // Include cookies
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -103,17 +104,60 @@ export function AuthProvider({ children }) {
         };
         setUser(userData);
         localStorage.setItem('hrms_user', JSON.stringify(userData));
+        console.log('✅ Token refreshed successfully');
         return true;
       }
       
-      clearAuth();
       return false;
     } catch (err) {
       console.error('Token refresh failed:', err);
-      clearAuth();
       return false;
     }
-  };
+  }, [getTenantId]);
+
+  // Check if user is authenticated on mount (page refresh)
+  useEffect(() => {
+    const checkAuth = async () => {
+      const storedUser = localStorage.getItem('hrms_user');
+      const storedToken = sessionStorage.getItem('hrms_access_token');
+      
+      if (storedUser && storedToken) {
+        // Validate the stored token before using it
+        console.log('🔍 Validating stored token...');
+        const isValid = await validateToken(storedToken);
+        
+        if (isValid) {
+          try {
+            const userData = JSON.parse(storedUser);
+            setUser(userData);
+            setAccessToken(storedToken);
+            console.log('✅ Session restored for:', userData.email);
+          } catch (err) {
+            console.error('Failed to parse stored user:', err);
+            clearAuth(false);
+          }
+        } else {
+          // Token invalid - try to refresh
+          console.log('🔄 Token invalid, attempting refresh...');
+          const refreshed = await refreshToken();
+          if (!refreshed) {
+            console.log('❌ Refresh failed, clearing auth');
+            clearAuth(true); // Redirect to login
+          }
+        }
+      } else if (storedUser && !storedToken) {
+        // Token expired but user data exists - try to refresh
+        const refreshed = await refreshToken();
+        if (!refreshed) {
+          clearAuth(false);
+        }
+      }
+      
+      setLoading(false);
+    };
+
+    checkAuth();
+  }, [clearAuth, refreshToken, validateToken]);
 
   // Setup token refresh interval
   useEffect(() => {
@@ -125,7 +169,7 @@ export function AuthProvider({ children }) {
     }, 14 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [accessToken]);
+  }, [accessToken, refreshToken]);
 
   // Login
   const login = async (email, password) => {
@@ -133,21 +177,32 @@ export function AuthProvider({ children }) {
     setLoading(true);
 
     try {
+      const tenantId = getTenantId();
+      console.log('🔐 Login attempt:', { email, tenantId });
+      
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Tenant-Id': getTenantId(),
+          'X-Tenant-Id': tenantId,
         },
         credentials: 'include',
-        body: JSON.stringify({ email, password, tenantId: getTenantId() }),
+        body: JSON.stringify({ email, password, tenantId }),
       });
 
       const data = await response.json();
+      console.log('📥 Login response:', { status: response.status, ok: response.ok, data });
 
       if (response.ok) {
+        console.log('✅ Login successful, storing token...');
+        console.log('📝 Token to store:', data.accessToken ? data.accessToken.substring(0, 50) + '...' : 'NONE');
+        
         setAccessToken(data.accessToken);
         sessionStorage.setItem('hrms_access_token', data.accessToken);
+        
+        // Verify token was stored
+        const storedToken = sessionStorage.getItem('hrms_access_token');
+        console.log('✅ Token stored successfully:', storedToken ? storedToken.substring(0, 50) + '...' : 'STORAGE FAILED!');
         
         const userData = {
           id: data.userId,
@@ -191,16 +246,56 @@ export function AuthProvider({ children }) {
       console.error('Logout error:', err);
     }
     
-    clearAuth();
+    clearAuth(true); // Redirect to login
   };
 
-  // Clear all auth data
-  const clearAuth = () => {
-    setUser(null);
-    setAccessToken(null);
-    localStorage.removeItem('hrms_user');
-    sessionStorage.removeItem('hrms_access_token');
-  };
+  // Authenticated fetch - automatically handles 401/403
+  const authFetch = useCallback(async (url, options = {}) => {
+    const token = accessToken || sessionStorage.getItem('hrms_access_token');
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Tenant-Id': getTenantId(),
+      'X-Org-Id': getTenantId(),
+      ...options.headers,
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+
+      // Handle auth errors
+      if (response.status === 401 || response.status === 403) {
+        console.log('🔒 Auth error detected, attempting token refresh...');
+        
+        // Try to refresh the token
+        const refreshed = await refreshToken();
+        
+        if (refreshed) {
+          // Retry the request with new token
+          const newToken = sessionStorage.getItem('hrms_access_token');
+          headers['Authorization'] = `Bearer ${newToken}`;
+          return fetch(url, { ...options, headers, credentials: 'include' });
+        } else {
+          // Refresh failed - redirect to login
+          clearAuth(true);
+          throw new Error('Session expired. Please login again.');
+        }
+      }
+
+      return response;
+    } catch (err) {
+      console.error('Auth fetch error:', err);
+      throw err;
+    }
+  }, [accessToken, getTenantId, refreshToken, clearAuth]);
 
   // Change password
   const changePassword = async (currentPassword, newPassword) => {
@@ -223,7 +318,7 @@ export function AuthProvider({ children }) {
   };
 
   // Get access token for API calls
-  const getAccessToken = () => accessToken;
+  const getAccessToken = () => accessToken || sessionStorage.getItem('hrms_access_token');
 
   // Check if user has role
   const hasRole = (role) => {
@@ -234,7 +329,7 @@ export function AuthProvider({ children }) {
     return user.role === role;
   };
 
-  // Check if user is admin
+  // Role checks
   const isAdmin = () => hasRole(['SUPER_ADMIN', 'ADMIN']);
   const isHR = () => hasRole(['SUPER_ADMIN', 'ADMIN', 'HR_MANAGER']);
   const isAccountant = () => hasRole(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
@@ -248,12 +343,14 @@ export function AuthProvider({ children }) {
     refreshToken,
     changePassword,
     getAccessToken,
+    authFetch,
     hasRole,
     isAdmin,
     isHR,
     isAccountant,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!accessToken,
     tenantId: getTenantId(),
+    clearAuth,
   };
 
   return (
