@@ -150,7 +150,7 @@ const SuperAdminDashboard = () => {
         <p style={{marginTop: '1rem', fontSize: '0.9rem', color: '#888'}}>
           You need to be logged in as <strong>SUPER_ADMIN</strong> to access this page.
           <br /><br />
-          Try logging in with: <code>superadmin@hrms.in</code> / <code>SuperAdmin@123</code>
+          Try logging in with: <code>superadmin@chandrahr.in</code> / <code>SuperAdmin@123</code>
         </p>
       </div>
     );

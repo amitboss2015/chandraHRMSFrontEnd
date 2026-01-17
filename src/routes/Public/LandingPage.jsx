@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 /**
- * Modern SaaS Landing Page for HRMS
+ * Modern SaaS Landing Page for ChandraHR
  * Features: Hero, Features Grid, Pricing, CTA
  */
 function LandingPage() {
@@ -13,10 +13,10 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <span className="text-xl">👔</span>
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
+                <span className="text-xl">🌙</span>
               </div>
-              <span className="text-xl font-bold">HRMS</span>
+              <span className="text-xl font-bold">ChandraHR</span>
             </div>
             <div className="flex items-center gap-4">
               <Link to="/login" className="text-slate-300 hover:text-white transition">
@@ -239,7 +239,7 @@ function LandingPage() {
             Ready to Simplify Your HR?
           </h2>
           <p className="text-xl text-slate-400 mb-10">
-            Join hundreds of companies already using HRMS to manage their workforce efficiently.
+            Start managing your workforce efficiently with ChandraHR - built for Indian businesses.
           </p>
           <Link 
             to="/register"
@@ -257,13 +257,13 @@ function LandingPage() {
       <footer className="py-10 px-4 border-t border-slate-800">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-sm">👔</span>
+            <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center">
+              <span className="text-sm">🌙</span>
             </div>
-            <span className="font-bold">HRMS</span>
+            <span className="font-bold">ChandraHR</span>
           </div>
           <p className="text-slate-500 text-sm">
-            © 2026 HRMS. All rights reserved.
+            © 2026 ChandraHR. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-400">
             <a href="#" className="hover:text-white transition">Privacy</a>

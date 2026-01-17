@@ -31,7 +31,7 @@ function Topbar({ onMenuClick }) {
     if (location.pathname.startsWith('/employees/')) return 'Employee Details';
     if (location.pathname.startsWith('/payroll/')) return 'Payroll Details';
     if (location.pathname.startsWith('/loans/')) return 'Loan Details';
-    return 'HRMS';
+    return 'ChandraHR';
   };
 
   const today = new Date().toLocaleDateString('en-IN', {
@@ -81,7 +81,7 @@ function Topbar({ onMenuClick }) {
 
           {/* User Menu */}
           <div className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l">
-            <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center shadow-sm">
+            <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-sm">
               <span className="text-white text-sm font-bold">
                 {user?.name?.charAt(0)?.toUpperCase() || 'A'}
               </span>
