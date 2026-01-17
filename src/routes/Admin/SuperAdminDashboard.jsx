@@ -168,6 +168,12 @@ const SuperAdminDashboard = () => {
 
   // Company Management Actions
   const openSoftDeleteModal = async (company) => {
+    // Prevent deleting system tenant
+    if (company.id === 'SASA001') {
+      alert('⚠️ Cannot delete the system tenant (SASA001).\n\nThis is the default tenant used for Super Admin access and system operations.');
+      return;
+    }
+    
     setSelectedCompany(company);
     setDeleteReason('');
     setShowDeleteModal(true);
