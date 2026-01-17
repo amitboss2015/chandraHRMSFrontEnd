@@ -29,6 +29,11 @@ const menuItems = [
   },
 ];
 
+// Super Admin only menu items
+const superAdminMenuItems = [
+  { path: "/admin/dashboard", label: "Admin Dashboard", icon: "🛡️" },
+];
+
 function Sidebar({ isOpen, onClose }) {
   const { logout, user } = useAuth();
   const location = useLocation();
@@ -149,6 +154,33 @@ function Sidebar({ isOpen, onClose }) {
                 )}
               </li>
             ))}
+            
+            {/* Super Admin Menu - Only for SUPER_ADMIN role */}
+            {user?.role === 'SUPER_ADMIN' && (
+              <>
+                <li className="pt-4 mt-4 border-t border-white/10">
+                  <p className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase">Super Admin</p>
+                </li>
+                {superAdminMenuItems.map((item) => (
+                  <li key={item.path}>
+                    <NavLink
+                      to={item.path}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                          isActive 
+                            ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-500/25' 
+                            : 'hover:bg-white/5 text-slate-300'
+                        }`
+                      }
+                    >
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </NavLink>
+                  </li>
+                ))}
+              </>
+            )}
           </ul>
         </nav>
 

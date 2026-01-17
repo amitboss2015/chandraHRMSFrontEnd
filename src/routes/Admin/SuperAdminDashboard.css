@@ -1,0 +1,375 @@
+/* Super Admin Dashboard Styles */
+
+.super-admin-dashboard {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+  min-height: 100vh;
+  color: #e0e0e0;
+}
+
+.admin-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-header h1 {
+  font-size: 2rem;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.admin-header p {
+  color: #a0a0a0;
+  font-size: 1rem;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.stat-icon {
+  font-size: 2rem;
+}
+
+.stat-content h3 {
+  font-size: 1.75rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+.stat-content p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #a0a0a0;
+}
+
+.stat-card.primary { border-left: 4px solid #6366F1; }
+.stat-card.success { border-left: 4px solid #10B981; }
+.stat-card.warning { border-left: 4px solid #F59E0B; }
+.stat-card.info { border-left: 4px solid #3B82F6; }
+.stat-card.danger { border-left: 4px solid #EF4444; }
+.stat-card.dark { border-left: 4px solid #6B7280; }
+
+/* Quick Stats */
+.quick-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.quick-stat {
+  padding: 0.5rem 1rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+.quick-stat span {
+  color: #6366F1;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+/* Tabs */
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.5rem;
+}
+
+.admin-tabs button {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: #a0a0a0;
+  cursor: pointer;
+  font-size: 0.95rem;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s;
+}
+
+.admin-tabs button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.admin-tabs button.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #6366F1;
+  font-weight: 600;
+}
+
+/* Filter Bar */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.filter-bar label {
+  color: #a0a0a0;
+}
+
+.filter-bar select {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+/* Trials Table */
+.trials-table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.trials-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.trials-table th {
+  text-align: left;
+  padding: 1rem;
+  background: rgba(99, 102, 241, 0.15);
+  color: #6366F1;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.trials-table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: top;
+}
+
+.trials-table tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.trials-table tr.suspended {
+  opacity: 0.6;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.trials-table tr.high-risk-row {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.tenant-id {
+  color: #6B7280;
+  font-family: monospace;
+}
+
+/* Status Badges */
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.active { background: rgba(16, 185, 129, 0.2); color: #10B981; }
+.status-badge.pending { background: rgba(245, 158, 11, 0.2); color: #F59E0B; }
+.status-badge.expired { background: rgba(107, 114, 128, 0.2); color: #6B7280; }
+.status-badge.converted { background: rgba(59, 130, 246, 0.2); color: #3B82F6; }
+.status-badge.suspended { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
+
+/* Risk Badges */
+.risk-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.risk-badge.low { background: rgba(16, 185, 129, 0.2); color: #10B981; }
+.risk-badge.medium { background: rgba(245, 158, 11, 0.2); color: #F59E0B; }
+.risk-badge.high { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
+.risk-badge.critical { background: rgba(239, 68, 68, 0.4); color: #ffffff; }
+
+.risk-score {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #EF4444;
+}
+
+/* Action Buttons */
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.actions button:hover {
+  transform: scale(1.1);
+}
+
+.btn-extend { background: rgba(59, 130, 246, 0.2); }
+.btn-suspend { background: rgba(245, 158, 11, 0.2); }
+.btn-reactivate { background: rgba(16, 185, 129, 0.2); }
+.btn-delete { background: rgba(239, 68, 68, 0.2); }
+
+.actions .loading {
+  color: #6366F1;
+  font-weight: bold;
+}
+
+/* Duplicate IPs Section */
+.duplicate-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.duplicate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ip-address {
+  font-weight: 600;
+  color: #F59E0B;
+}
+
+.count {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+}
+
+.duplicate-list {
+  padding: 0.5rem;
+}
+
+.duplicate-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.9rem;
+}
+
+.duplicate-item:last-child {
+  border-bottom: none;
+}
+
+/* No Data */
+.no-data {
+  text-align: center;
+  padding: 3rem;
+  color: #6B7280;
+  font-size: 1.1rem;
+}
+
+/* Loading & Error States */
+.admin-loading, .admin-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #6366F1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.admin-error h2 {
+  color: #EF4444;
+  margin-bottom: 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .super-admin-dashboard {
+    padding: 1rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .admin-tabs {
+    flex-wrap: wrap;
+  }
+  
+  .trials-table {
+    font-size: 0.8rem;
+  }
+  
+  .trials-table th, .trials-table td {
+    padding: 0.5rem;
+  }
+  
+  .duplicate-item {
+    grid-template-columns: 1fr;
+  }
+}

@@ -168,9 +168,9 @@ function Login() {
           {/* Footer */}
           <div className="px-8 py-4 bg-white/5 border-t border-white/10 text-center">
             <p className="text-white/50 text-sm">
-              Don't have an account?{' '}
-              <Link to="/signup" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
-                Sign up
+              New company?{' '}
+              <Link to="/register" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+                Create your company for free
               </Link>
             </p>
           </div>
@@ -178,7 +178,7 @@ function Login() {
 
         {/* Footer Text */}
         <p className="text-center text-white/30 text-xs mt-6">
-          © 2025 HRMS Portal. Secure & Reliable HR Management.
+          © 2026 HRMS Portal. Secure & Reliable HR Management.
         </p>
       </div>
     </div>

@@ -71,19 +71,38 @@ function Dashboard() {
         ? employees.filter(e => e.status === 'ACTIVE').length 
         : 0;
 
+      // Check if attendance data exists for current month
+      const hasAttendanceData = attendance && Array.isArray(attendance) && attendance.length > 0;
+      
+      // Calculate totals from actual attendance data
+      let todayPresent = 0, todayAbsent = 0, todayLate = 0;
+      if (hasAttendanceData) {
+        attendance.forEach(emp => {
+          todayPresent += emp.presentDays || 0;
+          todayAbsent += emp.absentDays || 0;
+          todayLate += emp.lateDays || 0;
+        });
+        // These are monthly totals, for "today" we need to approximate
+        const daysInMonth = new Date().getDate();
+        todayPresent = Math.round(todayPresent / daysInMonth);
+        todayAbsent = Math.round(todayAbsent / daysInMonth);
+        todayLate = Math.round(todayLate / daysInMonth);
+      }
+
       setStats({
         totalEmployees: Array.isArray(employees) ? employees.length : 0,
         activeEmployees: activeEmps,
         totalShifts: Array.isArray(shifts) ? shifts.length : 0,
-        todayPresent: attendance?.presentToday || Math.floor(activeEmps * 0.85),
-        todayAbsent: attendance?.absentToday || Math.floor(activeEmps * 0.1),
-        todayLate: attendance?.lateToday || Math.floor(activeEmps * 0.05),
-        pendingLeaves: attendance?.pendingLeaves || 0,
+        todayPresent: todayPresent,
+        todayAbsent: todayAbsent,
+        todayLate: todayLate,
+        pendingLeaves: 0,
         activeLoans: 0,
         monthlyPayroll: payroll?.totalNetSalary || 0,
+        hasAttendanceData: hasAttendanceData,
       });
 
-      // Generate mock attendance trend for last 7 days
+      // Generate attendance trend for last 7 days (show zeros if no data)
       const trend = [];
       for (let i = 6; i >= 0; i--) {
         const date = new Date();
@@ -93,21 +112,29 @@ function Dashboard() {
         trend.push({
           day: dayName,
           date: date.getDate(),
-          present: isSunday ? 0 : Math.floor(activeEmps * (0.8 + Math.random() * 0.15)),
-          absent: isSunday ? 0 : Math.floor(activeEmps * (0.05 + Math.random() * 0.1)),
-          late: isSunday ? 0 : Math.floor(activeEmps * Math.random() * 0.1),
+          present: 0, // Will be 0 if no attendance data
+          absent: 0,
+          late: 0,
           isWeekend: isSunday,
         });
       }
       setAttendanceTrend(trend);
 
-      // Recent activity (mock)
-      setRecentActivity([
-        { type: 'attendance', text: 'Attendance uploaded for today', time: '2 hours ago', icon: '📊' },
-        { type: 'leave', text: '3 new leave requests pending', time: '4 hours ago', icon: '📝' },
-        { type: 'payroll', text: 'July payroll generated', time: '1 day ago', icon: '💰' },
-        { type: 'employee', text: 'New employee added: Rahul Kumar', time: '2 days ago', icon: '👤' },
-      ]);
+      // Recent activity - show actual status
+      const activities = [];
+      if (!hasAttendanceData) {
+        activities.push({ type: 'info', text: 'No attendance data for this month', time: 'Import attendance to see data', icon: '📋' });
+      }
+      if (activeEmps === 0) {
+        activities.push({ type: 'info', text: 'No employees added yet', time: 'Add employees to get started', icon: '👥' });
+      }
+      if (Array.isArray(shifts) && shifts.length === 0) {
+        activities.push({ type: 'info', text: 'No shifts configured', time: 'Configure shifts first', icon: '🕐' });
+      }
+      if (activities.length === 0) {
+        activities.push({ type: 'success', text: 'System is ready', time: 'All configurations done', icon: '✅' });
+      }
+      setRecentActivity(activities);
 
     } catch (e) {
       console.error('Dashboard load error:', e);
@@ -163,7 +190,9 @@ function Dashboard() {
         <StatCard
           title="Present Today"
           value={stats.todayPresent}
-          subtitle={`${Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}% attendance`}
+          subtitle={stats.hasAttendanceData 
+            ? `${Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}% attendance`
+            : 'No data for this month'}
           icon="✅"
           color="green"
         />
@@ -234,10 +263,19 @@ function Dashboard() {
 
           <div className="mt-6 pt-4 border-t">
             <div className="text-center">
-              <div className="text-4xl font-bold text-emerald-600">
-                {Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}%
-              </div>
-              <div className="text-sm text-slate-500 mt-1">Attendance Rate</div>
+              {stats.hasAttendanceData ? (
+                <>
+                  <div className="text-4xl font-bold text-emerald-600">
+                    {Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}%
+                  </div>
+                  <div className="text-sm text-slate-500 mt-1">Attendance Rate</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-slate-400">--</div>
+                  <div className="text-sm text-slate-500 mt-1">No attendance data for {new Date().toLocaleString('en', { month: 'long', year: 'numeric' })}</div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -5,12 +5,18 @@ import ProtectedRoute from "./ProtectedRoute";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 
+// Public Pages (SaaS Landing & Registration)
+import LandingPage from "./routes/Public/LandingPage";
+import CompanyRegister from "./routes/Public/CompanyRegister";
+import ActivateAccount from "./routes/Public/ActivateAccount";
+
 import Dashboard from "./routes/Dashboard";
 import Login from "./routes/Auth/Login";
 import Signup from "./routes/Auth/Signup";
 import EmployeeList from "./routes/Employees/EmployeeList";
 import EmployeeUpsert from "./routes/Employees/EmployeeUpsert";
 import EmployeeProfile from "./routes/Employees/EmployeeProfile";
+import EmployeeImport from "./routes/Employees/EmployeeImport";
 
 import ShiftList from "./routes/Shifts/ShiftList";
 import ShiftAssign from "./routes/Shifts/ShiftAssign";
@@ -27,6 +33,7 @@ import MarkLeave from "./routes/Leaves/MarkLeave";
 import LeaveManagement from "./routes/Leaves/LeaveManagement";
 import HolidayManagement from "./routes/Settings/HolidayManagement";
 import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
+import SuperAdminDashboard from "./routes/Admin/SuperAdminDashboard";
 
 // Main Layout Component with responsive sidebar
 function MainLayout({ children }) {
@@ -53,8 +60,16 @@ function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          {/* Public Routes - SaaS Onboarding */}
+          <Route path="/welcome" element={<LandingPage />} />
+          <Route path="/register" element={<CompanyRegister />} />
+          <Route path="/activate/:token" element={<ActivateAccount />} />
+          
+          {/* Auth Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          
+          {/* Protected Routes */}
           <Route
             path="/*"
             element={
@@ -66,6 +81,7 @@ function App() {
                     <Route path="/employees">
                       <Route index element={<EmployeeList />} />
                       <Route path="new" element={<EmployeeUpsert mode="create" />} />
+                      <Route path="import" element={<EmployeeImport />} />
                       <Route path=":empCode" element={<EmployeeProfile />} />
                       <Route path=":empCode/edit" element={<EmployeeUpsert mode="edit" />} />
                     </Route>
@@ -85,6 +101,9 @@ function App() {
                     <Route path="/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
+                    
+                    {/* Super Admin Routes */}
+                    <Route path="/admin/dashboard" element={<SuperAdminDashboard />} />
                   </Routes>
                 </MainLayout>
               </ProtectedRoute>

@@ -222,6 +222,8 @@ export default function EmployeeUpsert({ mode = "create" }) {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState("personal");
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
 
   const fetchedOnce = useRef(false);
 
@@ -246,12 +248,137 @@ export default function EmployeeUpsert({ mode = "create" }) {
     }
   }, [isEdit, empCode, state]);
 
-  const onChange = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  // Validation patterns
+  const validationRules = {
+    emp_code: {
+      required: true,
+      pattern: /^[A-Za-z0-9_-]+$/,
+      message: "Only letters, numbers, underscores and hyphens allowed"
+    },
+    first_name: {
+      required: true,
+      minLength: 2,
+      maxLength: 50,
+      pattern: /^[A-Za-z\s.'-]+$/,
+      message: "Only letters, spaces, dots, apostrophes and hyphens allowed"
+    },
+    last_name: {
+      pattern: /^[A-Za-z\s.'-]*$/,
+      message: "Only letters, spaces, dots, apostrophes and hyphens allowed"
+    },
+    phone: {
+      pattern: /^$|^[6-9]\d{9}$/,
+      message: "Must be a 10-digit Indian mobile number starting with 6-9"
+    },
+    email: {
+      pattern: /^$|^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/,
+      message: "Enter a valid email address"
+    },
+    pincode: {
+      pattern: /^$|^[1-9][0-9]{5}$/,
+      message: "Must be a 6-digit Indian pincode"
+    },
+    aadhaar: {
+      pattern: /^$|^[2-9]{1}[0-9]{11}$/,
+      message: "Must be a 12-digit Aadhaar number"
+    },
+    pan: {
+      pattern: /^$|^[A-Z]{5}[0-9]{4}[A-Z]{1}$/,
+      message: "Must be in format ABCDE1234F"
+    },
+    ifsc: {
+      pattern: /^$|^[A-Z]{4}0[A-Z0-9]{6}$/,
+      message: "Must be in format SBIN0001234"
+    },
+    uan_number: {
+      pattern: /^$|^[0-9]{12}$/,
+      message: "Must be a 12-digit UAN number"
+    },
+    esic_number: {
+      pattern: /^$|^[0-9]{17}$/,
+      message: "Must be a 17-digit ESIC number"
+    },
+    emergency_contact_phone: {
+      pattern: /^$|^[6-9]\d{9}$/,
+      message: "Must be a 10-digit Indian mobile number"
+    }
+  };
+
+  // Validate a single field
+  const validateField = (key, value) => {
+    const rules = validationRules[key];
+    if (!rules) return "";
+    
+    // Required check
+    if (rules.required && (!value || value.toString().trim() === "")) {
+      return `${key.replace(/_/g, " ")} is required`;
+    }
+    
+    // Min length
+    if (rules.minLength && value && value.length < rules.minLength) {
+      return `Minimum ${rules.minLength} characters required`;
+    }
+    
+    // Max length
+    if (rules.maxLength && value && value.length > rules.maxLength) {
+      return `Maximum ${rules.maxLength} characters allowed`;
+    }
+    
+    // Pattern
+    if (rules.pattern && value && !rules.pattern.test(value)) {
+      return rules.message;
+    }
+    
+    return "";
+  };
+
+  // Validate all fields
+  const validateForm = () => {
+    const newErrors = {};
+    Object.keys(validationRules).forEach((key) => {
+      const error = validateField(key, form[key]);
+      if (error) newErrors[key] = error;
+    });
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const onChange = (k, v) => {
+    setForm((p) => ({ ...p, [k]: v }));
+    // Clear error when user types
+    if (errors[k]) {
+      setErrors((prev) => ({ ...prev, [k]: "" }));
+    }
+  };
+
+  const onBlur = (k) => {
+    setTouched((prev) => ({ ...prev, [k]: true }));
+    const error = validateField(k, form[k]);
+    setErrors((prev) => ({ ...prev, [k]: error }));
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (!form.emp_code?.trim()) return alert("Employee Code is required");
-    if (!form.first_name?.trim()) return alert("First name is required");
+    
+    // Mark all fields as touched
+    const allTouched = {};
+    Object.keys(validationRules).forEach((k) => (allTouched[k] = true));
+    setTouched(allTouched);
+    
+    // Validate form
+    if (!validateForm()) {
+      // Find first section with error and navigate to it
+      const errorFields = Object.keys(errors).filter((k) => errors[k]);
+      if (errorFields.length > 0) {
+        const field = errorFields[0];
+        if (["emp_code", "first_name", "last_name", "phone", "email", "address", "city", "state", "pincode"].includes(field)) {
+          setActiveSection("personal");
+        } else if (["aadhaar", "pan", "uan_number", "esic_number", "bank_name", "bank_account", "ifsc"].includes(field)) {
+          setActiveSection("bank");
+        }
+      }
+      return;
+    }
 
     const payload = toApi(form);
     try {
@@ -261,7 +388,18 @@ export default function EmployeeUpsert({ mode = "create" }) {
       nav("/employees");
     } catch (err) {
       console.error(err);
-      alert(err.message || "Save failed");
+      // Try to parse backend validation errors
+      const errMsg = err.message || "Save failed";
+      if (errMsg.includes("errors")) {
+        try {
+          const parsed = JSON.parse(errMsg.substring(errMsg.indexOf("{")));
+          if (parsed.errors) {
+            setErrors((prev) => ({ ...prev, ...parsed.errors }));
+            return;
+          }
+        } catch {}
+      }
+      alert(errMsg);
     } finally {
       setLoading(false);
     }
@@ -334,11 +472,12 @@ export default function EmployeeUpsert({ mode = "create" }) {
               onToggle={() => setActiveSection(activeSection === "personal" ? "" : "personal")}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Employee Code" required>
+                <Field label="Employee Code" required error={touched.emp_code && errors.emp_code} hint="Letters, numbers, _, - only">
                   <input
-                    className="input-field"
+                    className={`input-field ${touched.emp_code && errors.emp_code ? "border-red-400 bg-red-50" : ""}`}
                     value={form.emp_code}
                     onChange={(e) => onChange("emp_code", e.target.value)}
+                    onBlur={() => onBlur("emp_code")}
                     placeholder="e.g., EMP001"
                     disabled={isEdit}
                   />
@@ -354,37 +493,42 @@ export default function EmployeeUpsert({ mode = "create" }) {
                     <option value="RESIGNED">Resigned</option>
                   </select>
                 </Field>
-                <Field label="First Name" required>
+                <Field label="First Name" required error={touched.first_name && errors.first_name}>
                   <input
-                    className="input-field"
+                    className={`input-field ${touched.first_name && errors.first_name ? "border-red-400 bg-red-50" : ""}`}
                     value={form.first_name}
                     onChange={(e) => onChange("first_name", e.target.value)}
+                    onBlur={() => onBlur("first_name")}
                     placeholder="Enter first name"
                   />
                 </Field>
-                <Field label="Last Name">
+                <Field label="Last Name" error={touched.last_name && errors.last_name}>
                   <input
-                    className="input-field"
+                    className={`input-field ${touched.last_name && errors.last_name ? "border-red-400 bg-red-50" : ""}`}
                     value={form.last_name}
                     onChange={(e) => onChange("last_name", e.target.value)}
+                    onBlur={() => onBlur("last_name")}
                     placeholder="Enter last name"
                   />
                 </Field>
-                <Field label="Email">
+                <Field label="Email" error={touched.email && errors.email} hint="Valid email address">
                   <input
                     type="email"
-                    className="input-field"
+                    className={`input-field ${touched.email && errors.email ? "border-red-400 bg-red-50" : ""}`}
                     value={form.email}
                     onChange={(e) => onChange("email", e.target.value)}
+                    onBlur={() => onBlur("email")}
                     placeholder="email@example.com"
                   />
                 </Field>
-                <Field label="Phone">
+                <Field label="Phone" error={touched.phone && errors.phone} hint="10-digit mobile starting with 6-9">
                   <input
-                    className="input-field"
+                    className={`input-field ${touched.phone && errors.phone ? "border-red-400 bg-red-50" : ""}`}
                     value={form.phone}
-                    onChange={(e) => onChange("phone", e.target.value)}
-                    placeholder="+91 9876543210"
+                    onChange={(e) => onChange("phone", e.target.value.replace(/[^\d]/g, "").slice(0, 10))}
+                    onBlur={() => onBlur("phone")}
+                    placeholder="9876543210"
+                    maxLength={10}
                   />
                 </Field>
                 <Field label="Address" colSpan={2}>
@@ -411,12 +555,14 @@ export default function EmployeeUpsert({ mode = "create" }) {
                     placeholder="State"
                   />
                 </Field>
-                <Field label="Pincode">
+                <Field label="Pincode" error={touched.pincode && errors.pincode} hint="6-digit pincode">
                   <input
-                    className="input-field"
+                    className={`input-field ${touched.pincode && errors.pincode ? "border-red-400 bg-red-50" : ""}`}
                     value={form.pincode}
-                    onChange={(e) => onChange("pincode", e.target.value)}
-                    placeholder="PIN Code"
+                    onChange={(e) => onChange("pincode", e.target.value.replace(/[^\d]/g, "").slice(0, 6))}
+                    onBlur={() => onBlur("pincode")}
+                    placeholder="400001"
+                    maxLength={6}
                   />
                 </Field>
               </div>
@@ -617,38 +763,44 @@ export default function EmployeeUpsert({ mode = "create" }) {
                     📄 Identity Documents
                   </h4>
                   <div className="space-y-4">
-                    <Field label="Aadhaar Number">
+                    <Field label="Aadhaar Number" error={touched.aadhaar && errors.aadhaar} hint="12-digit number">
                       <input
-                        className="input-field"
+                        className={`input-field ${touched.aadhaar && errors.aadhaar ? "border-red-400 bg-red-50" : ""}`}
                         value={form.aadhaar}
-                        onChange={(e) => onChange("aadhaar", e.target.value)}
-                        placeholder="12 digit Aadhaar"
+                        onChange={(e) => onChange("aadhaar", e.target.value.replace(/[^\d]/g, "").slice(0, 12))}
+                        onBlur={() => onBlur("aadhaar")}
+                        placeholder="123456789012"
                         maxLength={12}
                       />
                     </Field>
-                    <Field label="PAN Number">
+                    <Field label="PAN Number" error={touched.pan && errors.pan} hint="Format: ABCDE1234F">
                       <input
-                        className="input-field uppercase"
+                        className={`input-field uppercase ${touched.pan && errors.pan ? "border-red-400 bg-red-50" : ""}`}
                         value={form.pan}
-                        onChange={(e) => onChange("pan", e.target.value.toUpperCase())}
+                        onChange={(e) => onChange("pan", e.target.value.toUpperCase().slice(0, 10))}
+                        onBlur={() => onBlur("pan")}
                         placeholder="ABCDE1234F"
                         maxLength={10}
                       />
                     </Field>
-                    <Field label="UAN Number">
+                    <Field label="UAN Number" error={touched.uan_number && errors.uan_number} hint="12-digit number">
                       <input
-                        className="input-field"
+                        className={`input-field ${touched.uan_number && errors.uan_number ? "border-red-400 bg-red-50" : ""}`}
                         value={form.uan_number}
-                        onChange={(e) => onChange("uan_number", e.target.value)}
-                        placeholder="Universal Account Number"
+                        onChange={(e) => onChange("uan_number", e.target.value.replace(/[^\d]/g, "").slice(0, 12))}
+                        onBlur={() => onBlur("uan_number")}
+                        placeholder="123456789012"
+                        maxLength={12}
                       />
                     </Field>
-                    <Field label="ESIC Number">
+                    <Field label="ESIC Number" error={touched.esic_number && errors.esic_number} hint="17-digit number">
                       <input
-                        className="input-field"
+                        className={`input-field ${touched.esic_number && errors.esic_number ? "border-red-400 bg-red-50" : ""}`}
                         value={form.esic_number}
-                        onChange={(e) => onChange("esic_number", e.target.value)}
-                        placeholder="ESIC Number"
+                        onChange={(e) => onChange("esic_number", e.target.value.replace(/[^\d]/g, "").slice(0, 17))}
+                        onBlur={() => onBlur("esic_number")}
+                        placeholder="12345678901234567"
+                        maxLength={17}
                       />
                     </Field>
                   </div>
@@ -676,12 +828,14 @@ export default function EmployeeUpsert({ mode = "create" }) {
                         placeholder="Bank account number"
                       />
                     </Field>
-                    <Field label="IFSC Code">
+                    <Field label="IFSC Code" error={touched.ifsc && errors.ifsc} hint="Format: SBIN0001234">
                       <input
-                        className="input-field uppercase"
+                        className={`input-field uppercase ${touched.ifsc && errors.ifsc ? "border-red-400 bg-red-50" : ""}`}
                         value={form.ifsc}
-                        onChange={(e) => onChange("ifsc", e.target.value.toUpperCase())}
+                        onChange={(e) => onChange("ifsc", e.target.value.toUpperCase().slice(0, 11))}
+                        onBlur={() => onBlur("ifsc")}
                         placeholder="SBIN0001234"
+                        maxLength={11}
                       />
                     </Field>
                     <Field label="Branch Name">
@@ -785,12 +939,14 @@ export default function EmployeeUpsert({ mode = "create" }) {
                         placeholder="Emergency contact name"
                       />
                     </Field>
-                    <Field label="Contact Phone">
+                    <Field label="Contact Phone" error={touched.emergency_contact_phone && errors.emergency_contact_phone} hint="10-digit mobile">
                       <input
-                        className="input-field"
+                        className={`input-field ${touched.emergency_contact_phone && errors.emergency_contact_phone ? "border-red-400 bg-red-50" : ""}`}
                         value={form.emergency_contact_phone}
-                        onChange={(e) => onChange("emergency_contact_phone", e.target.value)}
-                        placeholder="Emergency contact phone"
+                        onChange={(e) => onChange("emergency_contact_phone", e.target.value.replace(/[^\d]/g, "").slice(0, 10))}
+                        onBlur={() => onBlur("emergency_contact_phone")}
+                        placeholder="9876543210"
+                        maxLength={10}
                       />
                     </Field>
                   </div>
@@ -872,8 +1028,8 @@ function Section({ id, title, icon, description, isActive, onToggle, children })
   );
 }
 
-// Field Component
-function Field({ label, children, required, colSpan }) {
+// Field Component with validation
+function Field({ label, children, required, colSpan, error, hint }) {
   return (
     <div className={colSpan === 2 ? "md:col-span-2" : ""}>
       <label className="block text-sm font-medium text-slate-600 mb-1.5">
@@ -881,6 +1037,14 @@ function Field({ label, children, required, colSpan }) {
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
       {children}
+      {error && (
+        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+          <span>⚠️</span> {error}
+        </p>
+      )}
+      {hint && !error && (
+        <p className="text-xs text-slate-400 mt-1">{hint}</p>
+      )}
     </div>
   );
 }
