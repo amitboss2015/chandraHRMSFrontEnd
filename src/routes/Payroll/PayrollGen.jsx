@@ -163,14 +163,16 @@ function PayrollGen() {
 
   const openEditModal = (payroll) => {
     setSelectedPayroll(payroll);
-    // Calculate manual advance (total advance - loan EMI)
+    // Calculate manual advance (total advance - loan EMI - flexible loan deduction)
     const loanEmi = payroll.loanDeduction || 0;
+    const flexibleLoanDeduction = payroll.flexibleLoanDeduction || 0;
     const totalAdvance = payroll.advance || 0;
-    const manualAdvance = Math.max(0, totalAdvance - loanEmi);
+    const manualAdvance = Math.max(0, totalAdvance - loanEmi - flexibleLoanDeduction);
     
     setEditData({
       manualAdvance: manualAdvance,
       loanEmi: loanEmi,
+      flexibleLoanDeduction: flexibleLoanDeduction,
       due: payroll.due || 0,
       bonus: payroll.bonus || 0,
       incentive: payroll.incentive || 0,
@@ -196,6 +198,11 @@ function PayrollGen() {
       // Update manual advance
       if (editData.manualAdvance > 0) {
         await payrollApi.updateAdvance(selectedPayroll.id, editData.manualAdvance, 'Manual advance given');
+      }
+      
+      // Update flexible loan deduction
+      if (editData.flexibleLoanDeduction !== (selectedPayroll.flexibleLoanDeduction || 0)) {
+        await payrollApi.updateFlexibleLoan(selectedPayroll.id, editData.flexibleLoanDeduction, 'Flexible loan deduction');
       }
       
       // Update due
@@ -760,9 +767,24 @@ function PayrollGen() {
             <div className="space-y-4">
               {/* Loan EMI (read-only) */}
               <div className="bg-amber-50 p-3 rounded-lg">
-                <label className="block text-sm font-medium text-amber-700 mb-1">Loan EMI (Auto-calculated)</label>
+                <label className="block text-sm font-medium text-amber-700 mb-1">Fixed EMI Loans (Auto-calculated)</label>
                 <div className="text-lg font-bold text-amber-800">{formatCurrency(editData.loanEmi)}</div>
-                <p className="text-xs text-amber-600 mt-1">This is deducted automatically based on active loans</p>
+                <p className="text-xs text-amber-600 mt-1">This is deducted automatically based on active EMI loans</p>
+              </div>
+
+              {/* Flexible Loan Deduction */}
+              <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                <label className="block text-sm font-medium text-orange-700 mb-1">Flexible Loan Deduction</label>
+                <input
+                  type="number"
+                  value={editData.flexibleLoanDeduction}
+                  onChange={(e) => setEditData({...editData, flexibleLoanDeduction: parseFloat(e.target.value) || 0})}
+                  className="w-full border border-orange-300 rounded px-3 py-2"
+                  placeholder="Enter amount to deduct from flexible loans"
+                />
+                <p className="text-xs text-orange-600 mt-1">
+                  Enter amount to deduct from flexible loans this month
+                </p>
               </div>
 
               {/* Manual Advance */}
@@ -775,7 +797,9 @@ function PayrollGen() {
                   className="w-full border rounded px-3 py-2"
                   placeholder="Enter manual advance amount"
                 />
-                <p className="text-xs text-gray-500 mt-1">Total ADV = Loan EMI + Manual Advance = {formatCurrency((editData.loanEmi || 0) + (editData.manualAdvance || 0))}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Total ADV = EMI + Flexible + Manual = {formatCurrency((editData.loanEmi || 0) + (editData.flexibleLoanDeduction || 0) + (editData.manualAdvance || 0))}
+                </p>
               </div>
 
               {/* Due */}

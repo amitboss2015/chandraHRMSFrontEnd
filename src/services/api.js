@@ -235,6 +235,10 @@ export const loanApi = {
   payEmi: (loanId, data = {}) => 
     fetchApi(`${API_BASE}/loans/${loanId}/pay-emi`, { method: 'POST', body: JSON.stringify(data) }),
   
+  // Partial payment for flexible loans
+  partialPayment: (loanId, data) => 
+    fetchApi(`${API_BASE}/loans/${loanId}/partial-payment`, { method: 'POST', body: JSON.stringify(data) }),
+  
   // Get loan types for dropdown
   getLoanTypes: () => fetchApi(`${API_BASE}/loans/loan-types`),
   
@@ -336,6 +340,12 @@ export const payrollApi = {
     fetchApi(`${API_BASE}/payroll/${id}/due`, { 
       method: 'PUT', 
       body: JSON.stringify({ due, remarks }) 
+    }),
+  
+  updateFlexibleLoan: (id, amount, remarks = '') => 
+    fetchApi(`${API_BASE}/payroll/${id}/flexible-loan`, { 
+      method: 'PUT', 
+      body: JSON.stringify({ amount, remarks }) 
     }),
   
   // Approval

@@ -10,6 +10,8 @@ function LoanList() {
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [payEmiModal, setPayEmiModal] = useState(null);
+  const [partialPayModal, setPartialPayModal] = useState(null);
+  const [partialPayAmount, setPartialPayAmount] = useState('');
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
@@ -60,6 +62,22 @@ function LoanList() {
       loadLoans();
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to cancel loan' });
+    }
+  };
+
+  const handlePartialPayment = async () => {
+    if (!partialPayModal || !partialPayAmount) return;
+    try {
+      await loanApi.partialPayment(partialPayModal.id, {
+        amount: parseFloat(partialPayAmount),
+        remarks: 'Partial payment recorded'
+      });
+      setMessage({ type: 'success', text: `Payment of ₹${partialPayAmount} recorded successfully!` });
+      loadLoans();
+      setPartialPayModal(null);
+      setPartialPayAmount('');
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to record payment: ' + error.message });
     }
   };
 
@@ -161,21 +179,47 @@ function LoanList() {
                     <span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">
                       {loan.loanType}
                     </span>
+                    {loan.isFlexibleDeduction && (
+                      <span className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700" title="Flexible deduction - admin adjusts amount">
+                        Flexible
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-right">{formatCurrency(loan.principalAmount)}</td>
-                  <td className="px-4 py-3 text-sm text-right">{formatCurrency(loan.emiAmount)}</td>
+                  <td className="px-4 py-3 text-sm text-right">
+                    {loan.isFlexibleDeduction ? (
+                      <span className="text-amber-600 italic text-xs">Adjustable</span>
+                    ) : (
+                      formatCurrency(loan.emiAmount)
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-right font-medium text-red-600">
                     {formatCurrency(loan.outstandingBalance)}
                   </td>
                   <td className="px-4 py-3 text-sm text-center">
-                    <span className="font-medium">{loan.emisPaid || 0}</span>
-                    <span className="text-gray-400">/{loan.tenureMonths}</span>
-                    <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-                      <div 
-                        className="bg-green-500 h-1 rounded-full" 
-                        style={{ width: `${((loan.emisPaid || 0) / loan.tenureMonths) * 100}%` }}
-                      ></div>
-                    </div>
+                    {loan.isFlexibleDeduction ? (
+                      <div>
+                        <span className="text-xs text-gray-500">Paid:</span>
+                        <span className="ml-1 font-medium text-green-600">{formatCurrency(loan.totalPaid)}</span>
+                        <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                          <div 
+                            className="bg-amber-500 h-1 rounded-full" 
+                            style={{ width: `${((loan.totalPaid || 0) / loan.principalAmount) * 100}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="font-medium">{loan.emisPaid || 0}</span>
+                        <span className="text-gray-400">/{loan.tenureMonths}</span>
+                        <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                          <div 
+                            className="bg-green-500 h-1 rounded-full" 
+                            style={{ width: `${((loan.emisPaid || 0) / (loan.tenureMonths || 1)) * 100}%` }}
+                          ></div>
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-center">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -194,12 +238,21 @@ function LoanList() {
                       </button>
                       {loan.status === 'ACTIVE' && (
                         <>
-                          <button 
-                            onClick={() => setPayEmiModal(loan)}
-                            className="text-green-600 hover:text-green-800 text-xs underline"
-                          >
-                            Pay EMI
-                          </button>
+                          {loan.isFlexibleDeduction ? (
+                            <button 
+                              onClick={() => setPartialPayModal(loan)}
+                              className="text-amber-600 hover:text-amber-800 text-xs underline"
+                            >
+                              Record Payment
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => setPayEmiModal(loan)}
+                              className="text-green-600 hover:text-green-800 text-xs underline"
+                            >
+                              Pay EMI
+                            </button>
+                          )}
                           <button 
                             onClick={() => handleCancelLoan(loan.id)}
                             className="text-red-600 hover:text-red-800 text-xs underline"
@@ -329,6 +382,53 @@ function LoanList() {
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
               >
                 Confirm Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Partial Payment Modal for Flexible Loans */}
+      {partialPayModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-bold mb-4">💰 Record Partial Payment</h3>
+            <div className="bg-amber-50 p-4 rounded-lg mb-4 border border-amber-200">
+              <p><strong>Employee:</strong> {partialPayModal.empName || partialPayModal.empId}</p>
+              <p><strong>Loan Type:</strong> {partialPayModal.loanType}</p>
+              <p><strong>Outstanding:</strong> <span className="text-red-600 font-bold">{formatCurrency(partialPayModal.outstandingBalance)}</span></p>
+              <p><strong>Already Paid:</strong> <span className="text-green-600">{formatCurrency(partialPayModal.totalPaid)}</span></p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Payment Amount (₹)
+              </label>
+              <input
+                type="number"
+                value={partialPayAmount}
+                onChange={(e) => setPartialPayAmount(e.target.value)}
+                max={partialPayModal.outstandingBalance}
+                min="1"
+                placeholder="Enter amount to deduct"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Max: {formatCurrency(partialPayModal.outstandingBalance)}
+              </p>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => { setPartialPayModal(null); setPartialPayAmount(''); }}
+                className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePartialPayment}
+                disabled={!partialPayAmount || parseFloat(partialPayAmount) <= 0}
+                className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+              >
+                Record Payment
               </button>
             </div>
           </div>

@@ -19,6 +19,7 @@ function AddLoan({ onSuccess }) {
     tenureMonths: '',
     sanctionDate: new Date().toISOString().split('T')[0],
     remarks: '',
+    isFlexibleDeduction: false, // Admin adjusts deduction each month
   });
 
   const [calculatedEmi, setCalculatedEmi] = useState(null);
@@ -87,8 +88,14 @@ function AddLoan({ onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.empId || !formData.principalAmount || !formData.tenureMonths) {
+    // Tenure is not required for flexible loans
+    if (!formData.empId || !formData.principalAmount) {
       setMessage({ type: 'error', text: 'Please fill all required fields' });
+      return;
+    }
+    
+    if (!formData.isFlexibleDeduction && !formData.tenureMonths) {
+      setMessage({ type: 'error', text: 'Tenure is required for EMI-based loans' });
       return;
     }
 
@@ -100,8 +107,9 @@ function AddLoan({ onSuccess }) {
         ...formData,
         principalAmount: parseFloat(formData.principalAmount),
         interestRate: parseFloat(formData.interestRate) || 0,
-        tenureMonths: parseInt(formData.tenureMonths),
-        emiAmount: calculatedEmi,
+        tenureMonths: formData.isFlexibleDeduction ? 0 : parseInt(formData.tenureMonths),
+        emiAmount: formData.isFlexibleDeduction ? 0 : calculatedEmi,
+        isFlexibleDeduction: formData.isFlexibleDeduction,
       };
 
       await loanApi.create(payload);
@@ -118,6 +126,7 @@ function AddLoan({ onSuccess }) {
         tenureMonths: '',
         sanctionDate: new Date().toISOString().split('T')[0],
         remarks: '',
+        isFlexibleDeduction: false,
       });
       setSearchQuery('');
       setCalculatedEmi(null);
@@ -196,6 +205,25 @@ function AddLoan({ onSuccess }) {
           </select>
         </div>
 
+        {/* Flexible Deduction Option */}
+        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <input
+            type="checkbox"
+            id="flexibleDeduction"
+            checked={formData.isFlexibleDeduction}
+            onChange={(e) => setFormData({ ...formData, isFlexibleDeduction: e.target.checked })}
+            className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
+          />
+          <div>
+            <label htmlFor="flexibleDeduction" className="font-medium text-amber-800 cursor-pointer">
+              Flexible Deduction (No Fixed EMI)
+            </label>
+            <p className="text-sm text-amber-600 mt-0.5">
+              Admin can adjust deduction amount each month during payroll. Useful when repayment amount varies.
+            </p>
+          </div>
+        </div>
+
         {/* Amount Fields */}
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -231,18 +259,22 @@ function AddLoan({ onSuccess }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tenure (Months) <span className="text-red-500">*</span>
+              Tenure (Months) {!formData.isFlexibleDeduction && <span className="text-red-500">*</span>}
             </label>
             <input
               type="number"
               name="tenureMonths"
               value={formData.tenureMonths}
               onChange={handleChange}
-              min="1"
+              min={formData.isFlexibleDeduction ? "0" : "1"}
               max="60"
-              placeholder="12"
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder={formData.isFlexibleDeduction ? "Optional" : "12"}
+              disabled={formData.isFlexibleDeduction}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formData.isFlexibleDeduction ? 'bg-gray-100' : ''}`}
             />
+            {formData.isFlexibleDeduction && (
+              <p className="text-xs text-gray-500 mt-1">Not required for flexible loans</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Sanction Date</label>
@@ -256,8 +288,18 @@ function AddLoan({ onSuccess }) {
           </div>
         </div>
 
-        {/* EMI Preview */}
-        {calculatedEmi && (
+        {/* EMI Preview or Flexible Loan Info */}
+        {formData.isFlexibleDeduction ? (
+          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+            <h4 className="font-medium text-amber-800 mb-2">📊 Flexible Loan Summary</h4>
+            <div className="text-sm text-amber-700">
+              <p><strong>Outstanding Amount:</strong> {formatCurrency(parseFloat(formData.principalAmount) || 0)}</p>
+              <p className="mt-2 text-amber-600">
+                ℹ️ No fixed EMI. You can deduct any amount from payroll each month until the balance is cleared.
+              </p>
+            </div>
+          </div>
+        ) : calculatedEmi ? (
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="font-medium text-blue-800 mb-2">EMI Calculation</h4>
             <div className="grid grid-cols-3 gap-4 text-sm">
@@ -277,7 +319,7 @@ function AddLoan({ onSuccess }) {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Remarks */}
         <div>
@@ -306,6 +348,7 @@ function AddLoan({ onSuccess }) {
                 tenureMonths: '',
                 sanctionDate: new Date().toISOString().split('T')[0],
                 remarks: '',
+                isFlexibleDeduction: false,
               });
               setSearchQuery('');
             }}
