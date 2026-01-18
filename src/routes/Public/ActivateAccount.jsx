@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:8080/api";
@@ -14,11 +14,15 @@ function ActivateAccount() {
   const [status, setStatus] = useState("loading"); // loading, success, error
   const [message, setMessage] = useState("");
   const [tenantInfo, setTenantInfo] = useState(null);
+  
+  // Prevent double API calls (React StrictMode in dev causes double mount)
+  const activationAttempted = useRef(false);
 
   useEffect(() => {
-    if (token) {
+    if (token && !activationAttempted.current) {
+      activationAttempted.current = true;
       activateAccount();
-    } else {
+    } else if (!token) {
       setStatus("error");
       setMessage("Invalid activation link. No token provided.");
     }
@@ -29,6 +33,7 @@ function ActivateAccount() {
       const response = await fetch(`${API_BASE}/public/activate/${token}`);
       const data = await response.json();
       
+      // Handle success OR "already activated" (which means it was successful before)
       if (response.ok && data.success) {
         setStatus("success");
         setMessage(data.message);
@@ -41,6 +46,13 @@ function ActivateAccount() {
         setTimeout(() => {
           navigate("/login");
         }, 5000);
+      } else if (data.message && data.message.toLowerCase().includes("already been activated")) {
+        // Already activated is essentially a success - redirect to login
+        setStatus("success");
+        setMessage("Your account is already activated! Redirecting to login...");
+        setTimeout(() => {
+          navigate("/login");
+        }, 2000);
       } else {
         setStatus("error");
         setMessage(data.message || "Activation failed. The link may be invalid or expired.");
