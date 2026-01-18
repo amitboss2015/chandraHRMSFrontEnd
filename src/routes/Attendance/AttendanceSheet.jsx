@@ -97,10 +97,88 @@ function AttendanceSheet() {
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  
+  // Preview state
+  const [previewing, setPreviewing] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [importStep, setImportStep] = useState('upload'); // 'upload', 'preview', 'result'
 
-  const handleFileChange = (e) => setSelectedFile(e.target.files?.[0] ?? null);
+  /** ===================== STANDARD TEMPLATE IMPORT ===================== */
+  const [templateFile, setTemplateFile] = useState(null);
+  const [templateUploading, setTemplateUploading] = useState(false);
+  const [templateResult, setTemplateResult] = useState(null);
+  const [templateError, setTemplateError] = useState("");
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
-  const handleImport = async () => {
+  const handleDownloadTemplate = async () => {
+    setDownloadingTemplate(true);
+    try {
+      const resp = await fetch(`${API_BASE}/attendance/template/download?month=${month}&year=${year}`, {
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "Authorization": `Bearer ${getToken()}`
+        },
+      });
+      if (!resp.ok) throw new Error("Failed to download template");
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance_template_${year}_${String(month).padStart(2, '0')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Failed to download template: " + (e.message || "Unknown error"));
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const handleTemplateImport = async () => {
+    if (!templateFile) return alert("Please choose an Excel file first.");
+    
+    const fileName = templateFile.name.toLowerCase();
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+      return alert("Please upload a valid Excel file (.xlsx or .xls).");
+    }
+    
+    setTemplateError("");
+    setTemplateResult(null);
+    try {
+      setTemplateUploading(true);
+      const form = new FormData();
+      form.append("file", templateFile);
+      const resp = await fetch(`${API_BASE}/attendance/template/import`, {
+        method: "POST",
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "Authorization": `Bearer ${getToken()}`
+        },
+        body: form,
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      setTemplateResult(data);
+    } catch (e) {
+      setTemplateError(e.message || "Import failed");
+    } finally {
+      setTemplateUploading(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.files?.[0] ?? null);
+    // Reset preview when file changes
+    setPreviewData(null);
+    setImportStep('upload');
+    setImportResult(null);
+    setImportError("");
+  };
+
+  // Step 1: Preview the file before importing
+  const handlePreview = async () => {
     if (!selectedFile) return alert("Please choose a .xls/.xlsx file first.");
     
     const fileName = selectedFile.name.toLowerCase();
@@ -109,7 +187,50 @@ function AttendanceSheet() {
     }
     
     setImportError("");
+    setPreviewData(null);
+    
+    try {
+      setPreviewing(true);
+      const form = new FormData();
+      form.append("file", selectedFile);
+      form.append("month", String(month));
+      form.append("year", String(year));
+      
+      const resp = await fetch(`${API_BASE}/attendance/import/preview`, {
+        method: "POST",
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "X-Org-Id": getTenantId(),
+          ...(getToken() ? { "Authorization": `Bearer ${getToken()}` } : {})
+        },
+        body: form,
+      });
+      
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      setPreviewData(data);
+      
+      if (data.duplicateExists) {
+        setImportError(`Attendance for this period already exists. Delete Batch #${data.existingBatchId} first.`);
+      } else if (data.valid) {
+        setImportStep('preview');
+      } else {
+        setImportError(data.message || "Failed to parse file");
+      }
+    } catch (e) {
+      setImportError(e.message || "Preview failed");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  // Step 2: Confirm and import after preview
+  const handleConfirmImport = async () => {
+    if (!selectedFile) return alert("No file selected.");
+    
+    setImportError("");
     setImportResult(null);
+    
     try {
       setUploading(true);
       const form = new FormData();
@@ -128,6 +249,7 @@ function AttendanceSheet() {
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
       setImportResult(data);
+      setImportStep('result');
       
       if (data.duplicate) {
         setImportError(`Duplicate upload detected: ${data.message}`);
@@ -137,6 +259,17 @@ function AttendanceSheet() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Legacy handler (kept for compatibility)
+  const handleImport = handleConfirmImport;
+  
+  // Reset to upload step
+  const handleBackToUpload = () => {
+    setImportStep('upload');
+    setPreviewData(null);
+    setImportResult(null);
+    setImportError("");
   };
 
   const handleDeleteBatch = async (batchId) => {
@@ -715,93 +848,382 @@ function AttendanceSheet() {
         </div>
       )}
 
-      {/* ---------- Tab 3: Import ---------- */}
+      {/* ---------- Tab 3: Import Attendance ---------- */}
       {activeTab === "import" && (
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded p-4 text-sm">
-            <h3 className="font-semibold text-blue-800 mb-2">📋 Import Instructions</h3>
-            <ul className="list-disc list-inside text-blue-700 space-y-1">
-              <li>Upload the biometric attendance Excel file directly (.xls or .xlsx)</li>
-              <li>The system will read the <strong>"Logs"</strong> sheet with day-wise punch times</li>
-              <li>Cross-midnight punches are handled automatically (e.g., "00:33" = OUT from previous day)</li>
-              <li>Dual shifts are supported - employee can have multiple IN/OUT per day</li>
-              <li className="text-orange-600 font-medium">Note: Delete existing batch before re-uploading for same month.</li>
-            </ul>
+        <div className="space-y-6">
+          {/* Progress Indicator */}
+          <div className="bg-white rounded-2xl shadow-sm border p-4">
+            <div className="flex items-center justify-center gap-4">
+              <div className={`flex items-center gap-2 ${importStep === 'upload' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  importStep === 'upload' ? 'bg-emerald-500 text-white' : 
+                  importStep !== 'upload' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200'
+                }`}>1</span>
+                <span className="font-medium">Upload</span>
+              </div>
+              <div className={`w-12 h-0.5 ${importStep !== 'upload' ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
+              <div className={`flex items-center gap-2 ${importStep === 'preview' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  importStep === 'preview' ? 'bg-emerald-500 text-white' : 
+                  importStep === 'result' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200'
+                }`}>2</span>
+                <span className="font-medium">Preview</span>
+              </div>
+              <div className={`w-12 h-0.5 ${importStep === 'result' ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
+              <div className={`flex items-center gap-2 ${importStep === 'result' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  importStep === 'result' ? 'bg-emerald-500 text-white' : 'bg-slate-200'
+                }`}>3</span>
+                <span className="font-medium">Complete</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex gap-3 items-center flex-wrap">
-            <input 
-              type="file" 
-              accept=".xls,.xlsx" 
-              className="border p-2 rounded bg-white" 
-              onChange={handleFileChange} 
-            />
-            <button 
-              onClick={handleImport} 
-              disabled={!selectedFile || uploading}
-              className={`px-4 py-2 rounded font-medium ${
-                selectedFile && !uploading 
-                  ? "bg-blue-600 text-white hover:bg-blue-700" 
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {uploading ? "Importing..." : "Import"}
-            </button>
-          </div>
+          {/* Step 1: Upload */}
+          {importStep === 'upload' && (
+            <>
+              {/* Download Template */}
+              <div className="bg-white rounded-2xl shadow-sm border p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                  <span className="text-2xl">📥</span>
+                  Download Template (Optional)
+                </h3>
+                <p className="text-slate-600 text-sm mb-4">
+                  Download an empty template for <strong>{MONTH_NAMES[month-1]} {year}</strong>, 
+                  or upload your biometric machine export directly.
+                </p>
+                <button 
+                  onClick={handleDownloadTemplate}
+                  disabled={downloadingTemplate}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
+                    downloadingTemplate 
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                      : 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-md hover:shadow-lg'
+                  }`}
+                >
+                  {downloadingTemplate ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Downloading...
+                    </>
+                  ) : (
+                    <>📥 Download Template</>
+                  )}
+                </button>
+              </div>
 
-          {selectedFile && (
-            <div className="text-sm text-gray-600">
-              Selected: <span className="font-medium">{selectedFile.name}</span> ({(selectedFile.size / 1024).toFixed(1)} KB)
-            </div>
-          )}
-
-          {importError && !importResult?.duplicate && (
-            <div className="bg-red-50 border border-red-300 rounded p-3 text-red-700 text-sm">
-              <strong>Error:</strong> {importError}
-            </div>
-          )}
-
-          {importResult && importResult.duplicate && (
-            <div className="bg-orange-50 border border-orange-300 rounded p-4">
-              <h4 className="font-semibold text-orange-800 mb-2">⚠️ Attendance Already Exists</h4>
-              <p className="text-sm text-orange-700 mb-3">{importResult.message}</p>
-              <button 
-                onClick={() => handleDeleteBatch(importResult.existingBatchId || importResult.batchId)}
-                disabled={deleting}
-                className={`px-4 py-2 rounded font-medium ${
-                  deleting ? "bg-gray-300 text-gray-500" : "bg-red-600 text-white hover:bg-red-700"
-                }`}
-              >
-                {deleting ? "Deleting..." : `Delete & Re-upload`}
-              </button>
-            </div>
-          )}
-
-          {importResult && !importResult.duplicate && (
-            <div className={`border rounded p-4 ${importResult.failed > 0 ? 'bg-yellow-50 border-yellow-300' : 'bg-green-50 border-green-300'}`}>
-              <h4 className={`font-semibold mb-2 ${importResult.failed > 0 ? 'text-yellow-800' : 'text-green-800'}`}>
-                {importResult.failed > 0 ? '⚠️ Import Completed with Errors' : '✅ Import Successful'}
-              </h4>
-              <div className="text-sm space-y-1">
-                <div><strong>Batch ID:</strong> {importResult.batchId}</div>
-                <div className="flex gap-4">
-                  <span><strong>Total:</strong> {importResult.total}</span>
-                  <span className="text-green-600"><strong>Success:</strong> {importResult.success}</span>
-                  {importResult.failed > 0 && <span className="text-red-600"><strong>Failed:</strong> {importResult.failed}</span>}
+              {/* Upload File */}
+              <div className="bg-white rounded-2xl shadow-sm border p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                  <span className="text-2xl">📤</span>
+                  Upload Biometric File
+                </h3>
+                
+                <div className="flex gap-3 items-center flex-wrap">
+                  <input 
+                    type="file" 
+                    accept=".xls,.xlsx" 
+                    className="border p-2 rounded-xl bg-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" 
+                    onChange={handleFileChange} 
+                  />
+                  <button 
+                    onClick={handlePreview} 
+                    disabled={!selectedFile || previewing}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
+                      selectedFile && !previewing 
+                        ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg" 
+                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    {previewing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>🔍 Preview Import</>
+                    )}
+                  </button>
                 </div>
-                <div className="mt-2">{importResult.message}</div>
-                {importResult.errorsCsvUrl && (
-                  <div className="mt-2">
-                    <a 
-                      className="text-blue-600 underline hover:text-blue-800" 
-                      href={`${API_BASE}${importResult.errorsCsvUrl}`} 
-                      target="_blank" 
-                      rel="noreferrer"
-                    >
-                      📥 Download Error Details
-                    </a>
+
+                {selectedFile && (
+                  <div className="text-sm text-slate-600 mt-2">
+                    Selected: <span className="font-medium">{selectedFile.name}</span> ({(selectedFile.size / 1024).toFixed(1)} KB)
                   </div>
                 )}
+
+                {importError && (
+                  <div className="mt-4 bg-red-50 border border-red-300 rounded-xl p-4 text-red-700 text-sm">
+                    <strong>❌ Error:</strong> {importError}
+                    {previewData?.duplicateExists && (
+                      <button 
+                        onClick={() => handleDeleteBatch(previewData.existingBatchId)}
+                        disabled={deleting}
+                        className={`ml-4 px-3 py-1 rounded font-medium text-xs ${
+                          deleting ? "bg-gray-300 text-gray-500" : "bg-red-600 text-white hover:bg-red-700"
+                        }`}
+                      >
+                        {deleting ? "Deleting..." : `Delete Batch #${previewData.existingBatchId}`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Template Format Info */}
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+                <h3 className="font-bold text-blue-800 mb-3">📋 Supported Format (Biometric Logs)</h3>
+                <div className="overflow-x-auto">
+                  <table className="text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-blue-100">
+                        <th className="border px-2 py-1">No</th>
+                        <th className="border px-2 py-1">Name</th>
+                        <th className="border px-2 py-1">1</th>
+                        <th className="border px-2 py-1">2</th>
+                        <th className="border px-2 py-1">3</th>
+                        <th className="border px-2 py-1">...</th>
+                        <th className="border px-2 py-1">31</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border px-2 py-1 font-mono">2</td>
+                        <td className="border px-2 py-1">md sarwar</td>
+                        <td className="border px-2 py-1 font-mono text-xs whitespace-pre">08:59{'\n'}17:39</td>
+                        <td className="border px-2 py-1 font-mono text-xs whitespace-pre">08:58{'\n'}17:45</td>
+                        <td className="border px-2 py-1 font-mono text-xs whitespace-pre">08:57{'\n'}17:39</td>
+                        <td className="border px-2 py-1">...</td>
+                        <td className="border px-2 py-1 font-mono text-xs">-</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4 text-sm text-blue-700 space-y-1">
+                  <p>• <strong>Format:</strong> Same as biometric machine export (days as columns)</p>
+                  <p>• <strong>Cell format:</strong> IN time on first line, OUT time on second line</p>
+                  <p>• <strong>Cross-midnight:</strong> Times like 00:33 are treated as OUT from previous day</p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Step 2: Preview */}
+          {importStep === 'preview' && previewData && (
+            <div className="space-y-6">
+              {/* Preview Summary */}
+              <div className="bg-white rounded-2xl shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <span className="text-2xl">👁️</span>
+                    Import Preview
+                  </h3>
+                  <button 
+                    onClick={handleBackToUpload}
+                    className="text-slate-500 hover:text-slate-700 text-sm flex items-center gap-1"
+                  >
+                    ← Back to Upload
+                  </button>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  <div className="bg-slate-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-slate-700">{previewData.totalEmployeesInFile || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">Employees in File</div>
+                  </div>
+                  <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-emerald-600">{previewData.matchedEmployees || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">✓ Matched</div>
+                  </div>
+                  <div className={`rounded-xl p-4 text-center ${previewData.unmatchedEmployees > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}>
+                    <div className={`text-3xl font-bold ${previewData.unmatchedEmployees > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                      {previewData.unmatchedEmployees || 0}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">⚠️ Not Found</div>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-blue-600">{previewData.totalPunchRecords || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">Punch Records</div>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-purple-600">{previewData.daysWithData || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">Days with Data</div>
+                  </div>
+                </div>
+
+                {/* File Info */}
+                <div className="bg-slate-50 rounded-xl p-4 mb-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-500">File:</span>
+                      <span className="ml-2 font-medium">{previewData.fileName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Format:</span>
+                      <span className="ml-2 font-medium">{previewData.detectedFormat}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Period:</span>
+                      <span className="ml-2 font-medium">{previewData.detectedPeriod}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Status:</span>
+                      <span className="ml-2 font-medium text-emerald-600">✓ Ready to Import</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Unmatched Employees Warning */}
+                {previewData.unmatchedEmployees > 0 && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6">
+                    <h4 className="font-semibold text-amber-800 mb-2">⚠️ Unmatched Employees ({previewData.unmatchedEmployees})</h4>
+                    <p className="text-sm text-amber-700 mb-3">
+                      These employees exist in the file but not in ChandraHR. Their attendance will be skipped.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {previewData.employeeMatches?.filter(e => !e.matched).slice(0, 10).map((emp, i) => (
+                        <span key={i} className="px-2 py-1 bg-amber-100 rounded text-xs text-amber-800">
+                          {emp.empCodeInFile} - {emp.nameInFile}
+                        </span>
+                      ))}
+                      {previewData.unmatchedEmployees > 10 && (
+                        <span className="px-2 py-1 bg-amber-200 rounded text-xs text-amber-800">
+                          +{previewData.unmatchedEmployees - 10} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample Data Preview */}
+                {previewData.sampleRows?.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="font-semibold text-slate-700 mb-3">📋 Sample Data (First 5 Employees, First 7 Days)</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border text-xs">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="border px-2 py-1">Code</th>
+                            <th className="border px-2 py-1">Name</th>
+                            {[1,2,3,4,5,6,7].map(d => (
+                              <th key={d} className="border px-2 py-1 text-center">{d}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewData.sampleRows.map((row, i) => (
+                            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                              <td className="border px-2 py-1 font-mono">{row.empCode}</td>
+                              <td className="border px-2 py-1">{row.name}</td>
+                              {[1,2,3,4,5,6,7].map(d => {
+                                const dayData = row.days?.find(day => day.dayOfMonth === d);
+                                return (
+                                  <td key={d} className="border px-2 py-1 text-center font-mono">
+                                    {dayData ? (
+                                      <span className={`${dayData.status === 'ONLY_IN' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                        {dayData.punches?.join('\n') || '-'}
+                                      </span>
+                                    ) : '-'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-4 justify-end">
+                  <button 
+                    onClick={handleBackToUpload}
+                    className="px-6 py-2.5 rounded-xl font-medium border border-slate-300 text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleConfirmImport}
+                    disabled={uploading}
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium transition-all ${
+                      !uploading 
+                        ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg" 
+                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    {uploading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Importing...
+                      </>
+                    ) : (
+                      <>✅ Confirm & Import</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Result */}
+          {importStep === 'result' && importResult && (
+            <div className="bg-white rounded-2xl shadow-sm border p-6">
+              <div className={`${importResult.failed > 0 ? 'bg-yellow-50 border-yellow-300' : 'bg-green-50 border-green-300'} rounded-xl p-6`}>
+                <h4 className={`text-xl font-bold mb-4 ${importResult.failed > 0 ? 'text-yellow-800' : 'text-green-800'}`}>
+                  {importResult.failed > 0 ? '⚠️ Import Completed with Errors' : '✅ Import Successful!'}
+                </h4>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-white rounded-lg p-4 text-center border">
+                    <div className="text-3xl font-bold text-slate-700">{importResult.total || 0}</div>
+                    <div className="text-sm text-slate-500">Total Punches</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center border">
+                    <div className="text-3xl font-bold text-green-600">{importResult.success || 0}</div>
+                    <div className="text-sm text-slate-500">Imported</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center border">
+                    <div className="text-3xl font-bold text-red-500">{importResult.failed || 0}</div>
+                    <div className="text-sm text-slate-500">Failed</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center border">
+                    <div className="text-3xl font-bold text-blue-600">#{importResult.batchId || '-'}</div>
+                    <div className="text-sm text-slate-500">Batch ID</div>
+                  </div>
+                </div>
+
+                <p className="text-slate-600 mb-4">{importResult.message}</p>
+                
+                {importResult.errorsCsvUrl && (
+                  <a 
+                    className="text-blue-600 underline hover:text-blue-800 text-sm" 
+                    href={`${API_BASE}${importResult.errorsCsvUrl}`} 
+                    target="_blank" 
+                    rel="noreferrer"
+                  >
+                    📥 Download Error Details (CSV)
+                  </a>
+                )}
+              </div>
+
+              <div className="flex gap-4 mt-6">
+                <button 
+                  onClick={() => {
+                    handleBackToUpload();
+                    setSelectedFile(null);
+                  }}
+                  className="px-6 py-2.5 rounded-xl font-medium border border-slate-300 text-slate-600 hover:bg-slate-50"
+                >
+                  Import Another File
+                </button>
+                <button 
+                  onClick={() => setActiveTab('monthly')}
+                  className="px-6 py-2.5 rounded-xl font-medium bg-emerald-500 text-white hover:bg-emerald-600"
+                >
+                  View Monthly Report →
+                </button>
               </div>
             </div>
           )}

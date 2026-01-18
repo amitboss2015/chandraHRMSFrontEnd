@@ -270,9 +270,23 @@ export const payrollApi = {
   
   // Generation
   generate: async (year, month, orgId = DEFAULT_ORG_ID) => {
+    const tenantId = getCurrentTenantId();
+    const accessToken = getAccessToken();
+    
+    const headers = { 
+      'Content-Type': 'application/json',
+      'X-Tenant-Id': tenantId,
+    };
+    
+    // Add Authorization header if token exists
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    
     const response = await fetch(`${API_BASE}/payroll/generate?orgId=${orgId}&year=${year}&month=${month}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
     });
     const data = await response.json();
     if (!response.ok) {
