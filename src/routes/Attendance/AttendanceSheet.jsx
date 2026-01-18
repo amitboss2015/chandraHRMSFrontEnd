@@ -426,6 +426,37 @@ function AttendanceSheet() {
     }
   };
 
+  // Recalculate attendance state
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcResult, setRecalcResult] = useState(null);
+
+  const handleRecalculate = async () => {
+    if (!confirm(`This will recalculate attendance for ${MONTH_NAMES[month-1]} ${year}.\n\nThis is useful if you added leaves after attendance was imported.\n\nContinue?`)) {
+      return;
+    }
+    
+    setRecalculating(true);
+    setRecalcResult(null);
+    try {
+      const resp = await fetch(`${API_BASE}/attendance/import/recalculate?month=${month}&year=${year}`, {
+        method: "POST",
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "Authorization": `Bearer ${getToken()}`
+        },
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      setRecalcResult(data);
+      // Reload summary after recalculation
+      await loadSummary();
+    } catch (e) {
+      alert("Recalculation failed: " + (e.message || "Unknown error"));
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   useEffect(() => { 
     if (activeTab === "monthly") loadSummary(); 
   }, [activeTab, month, year]);
@@ -506,18 +537,42 @@ function AttendanceSheet() {
       {/* ---------- Tab 1: Monthly Report (All Employees) ---------- */}
       {activeTab === "monthly" && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button 
               onClick={loadSummary} 
               className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all font-medium flex items-center gap-2"
             >
               🔄 Refresh
             </button>
+            <button 
+              onClick={handleRecalculate}
+              disabled={recalculating}
+              className={`px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all ${
+                recalculating 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md hover:shadow-lg'
+              }`}
+              title="Recalculate attendance to sync with leave records"
+            >
+              {recalculating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Recalculating...
+                </>
+              ) : (
+                <>🔁 Recalculate</>
+              )}
+            </button>
             {summaryLoading && <span className="text-sm text-slate-500 flex items-center gap-2">
               <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
               Loading…
             </span>}
             {summaryError && <span className="text-sm text-red-600 bg-red-50 px-3 py-1 rounded-lg">{summaryError}</span>}
+            {recalcResult && (
+              <span className="text-sm text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">
+                ✅ {recalcResult.message}
+              </span>
+            )}
           </div>
 
           {/* Summary Stats */}
