@@ -13,7 +13,8 @@ const getApiBase = () => {
 };
 
 const API_BASE = getApiBase();
-const DEFAULT_ORG_ID = 'SASA001';
+// Don't use a default orgId - let backend resolve from TenantContext (JWT)
+const DEFAULT_ORG_ID = '';
 
 /**
  * Get current tenant ID from:

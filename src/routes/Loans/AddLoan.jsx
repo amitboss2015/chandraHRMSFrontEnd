@@ -11,7 +11,7 @@ function AddLoan({ onSuccess }) {
   const [message, setMessage] = useState(null);
 
   const [formData, setFormData] = useState({
-    orgId: 'SASA001',
+    orgId: '', // Let backend resolve from TenantContext
     empId: '',
     loanType: 'PERSONAL',
     principalAmount: '',
@@ -118,7 +118,7 @@ function AddLoan({ onSuccess }) {
       
       // Reset form
       setFormData({
-        orgId: 'SASA001',
+        orgId: '', // Let backend resolve from TenantContext
         empId: '',
         loanType: 'PERSONAL',
         principalAmount: '',
@@ -340,7 +340,7 @@ function AddLoan({ onSuccess }) {
             type="button"
             onClick={() => {
               setFormData({
-                orgId: 'SASA001',
+                orgId: '', // Let backend resolve from TenantContext
                 empId: '',
                 loanType: 'PERSONAL',
                 principalAmount: '',
