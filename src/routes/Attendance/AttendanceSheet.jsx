@@ -107,6 +107,11 @@ function AttendanceSheet() {
   const [existingBatches, setExistingBatches] = useState([]);
   const [batchesLoading, setBatchesLoading] = useState(false);
   const [existingBatchForMonth, setExistingBatchForMonth] = useState(null);
+  
+  // Biometric device state (for multi-device support)
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(""); // Empty means direct emp_code matching
+  const [devicesLoading, setDevicesLoading] = useState(false);
 
   /** ===================== STANDARD TEMPLATE IMPORT ===================== */
   const [templateFile, setTemplateFile] = useState(null);
@@ -131,11 +136,26 @@ function AttendanceSheet() {
       setBatchesLoading(false);
     }
   };
+  
+  // Load biometric devices
+  const loadDevices = async () => {
+    setDevicesLoading(true);
+    try {
+      const data = await fetchJson('/devices?activeOnly=true');
+      setDevices(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Failed to load devices:', e);
+      setDevices([]);
+    } finally {
+      setDevicesLoading(false);
+    }
+  };
 
-  // Load batches when tab is active or month/year changes
+  // Load batches and devices when tab is active or month/year changes
   useEffect(() => {
     if (activeTab === 'import') {
       loadExistingBatches();
+      loadDevices();
     }
   }, [activeTab, month, year]);
 
@@ -225,7 +245,13 @@ function AttendanceSheet() {
       form.append("month", String(month));
       form.append("year", String(year));
       
-      const resp = await fetch(`${API_BASE}/attendance/import/preview`, {
+      // Build URL with optional deviceId
+      let url = `${API_BASE}/attendance/import/preview`;
+      if (selectedDeviceId) {
+        url += `?deviceId=${selectedDeviceId}`;
+      }
+      
+      const resp = await fetch(url, {
         method: "POST",
         headers: { 
           "X-Tenant-Id": getTenantId(),
@@ -266,7 +292,14 @@ function AttendanceSheet() {
       form.append("file", selectedFile);
       form.append("month", String(month));
       form.append("year", String(year));
-      const resp = await fetch(`${API_BASE}/attendance/import`, {
+      
+      // Build URL with optional deviceId
+      let url = `${API_BASE}/attendance/import`;
+      if (selectedDeviceId) {
+        url += `?deviceId=${selectedDeviceId}`;
+      }
+      
+      const resp = await fetch(url, {
         method: "POST",
         headers: { 
           "X-Tenant-Id": getTenantId(),
@@ -1129,6 +1162,36 @@ function AttendanceSheet() {
                   <span className="text-2xl">📤</span>
                   Upload Biometric File
                 </h3>
+                
+                {/* Device Selection (for multi-device support) */}
+                {devices.length > 0 && (
+                  <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      <span className="text-lg mr-1">📟</span> 
+                      Select Biometric Device (Optional)
+                    </label>
+                    <select
+                      value={selectedDeviceId}
+                      onChange={(e) => setSelectedDeviceId(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    >
+                      <option value="">-- Direct Employee Code Matching (Default) --</option>
+                      {devices.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.deviceCode} {d.deviceName ? `- ${d.deviceName}` : ''} 
+                          {d.isDefault ? ' ★ Default' : ''}
+                          {d.mappingCount > 0 ? ` (${d.mappingCount} mappings)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {selectedDeviceId 
+                        ? '✅ Employee codes will be resolved using device mappings'
+                        : '💡 Leave empty to match employee codes directly (backward compatible)'
+                      }
+                    </p>
+                  </div>
+                )}
                 
                 <div className="flex gap-3 items-center flex-wrap">
                   <input 

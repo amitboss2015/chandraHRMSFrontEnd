@@ -25,6 +25,7 @@ const menuItems = [
     children: [
       { path: "/holidays", label: "Holidays" },
       { path: "/settings/salary-overtime", label: "Salary & OT Rules" },
+      { path: "/settings/devices", label: "Biometric Devices" },
     ]
   },
 ];

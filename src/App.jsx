@@ -33,6 +33,7 @@ import MarkLeave from "./routes/Leaves/MarkLeave";
 import LeaveManagement from "./routes/Leaves/LeaveManagement";
 import HolidayManagement from "./routes/Settings/HolidayManagement";
 import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
+import DeviceManagement from "./routes/Settings/DeviceManagement";
 import SuperAdminDashboard from "./routes/Admin/SuperAdminDashboard";
 
 // Main Layout Component with responsive sidebar
@@ -101,6 +102,7 @@ function App() {
                     <Route path="/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
+                    <Route path="/settings/devices" element={<DeviceManagement />} />
                     
                     {/* Super Admin Routes */}
                     <Route path="/admin/dashboard" element={<SuperAdminDashboard />} />
