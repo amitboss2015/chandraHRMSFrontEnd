@@ -67,6 +67,13 @@ function getAccessToken() {
 }
 
 /**
+ * Export getToken as alias for getAccessToken (for components)
+ */
+export function getToken() {
+  return getAccessToken();
+}
+
+/**
  * Handle 401 errors - redirect to login
  */
 function handleUnauthorized() {
