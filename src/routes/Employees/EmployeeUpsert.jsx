@@ -174,7 +174,7 @@ const getEmployee = (empCode) => apiGet(`${API_BASE}/employees/${encodeURICompon
 const createEmployee = (payload) => apiSend(`${API_BASE}/employees`, "POST", payload);
 const updateEmployee = (empCode, payload) =>
   apiSend(`${API_BASE}/employees/${encodeURIComponent(empCode)}`, "PUT", payload);
-const getDevices = () => apiGet(`${API_BASE}/attendance/devices`);
+const getDevices = () => apiGet(`${API_BASE}/devices`);
 
 // Empty form
 const empty = {
