@@ -111,7 +111,36 @@ function AttendanceSheet() {
   // Biometric device state (for multi-device support)
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(""); // Empty means direct emp_code matching
+  const [selectedDeviceCode, setSelectedDeviceCode] = useState(""); // For encoding in filename
   const [devicesLoading, setDevicesLoading] = useState(false);
+  const [detectedDevice, setDetectedDevice] = useState(null); // Device extracted from uploaded file
+
+  // Device token encoding/decoding (same as employee import)
+  const encodeDeviceToken = (deviceId, deviceCode) => {
+    const data = JSON.stringify({ id: deviceId, code: deviceCode, ts: Date.now() });
+    return btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  const decodeDeviceToken = (token) => {
+    try {
+      const base64 = token.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+      const data = JSON.parse(atob(padded));
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
+  // Extract device info from filename pattern: attendance_template_YYYY_MM_device_ID_CODE.xlsx
+  const extractDeviceFromFilename = (filename) => {
+    // Pattern: attendance_template_2025_07_device_1_DEFAULT.xlsx
+    const match = filename.match(/attendance_template_\d+_\d+_device_(\d+)_([^.]+)\./i);
+    if (match) {
+      return { deviceId: parseInt(match[1], 10), deviceCode: match[2] };
+    }
+    return null;
+  };
 
   /** ===================== STANDARD TEMPLATE IMPORT ===================== */
   const [templateFile, setTemplateFile] = useState(null);
@@ -160,9 +189,21 @@ function AttendanceSheet() {
   }, [activeTab, month, year]);
 
   const handleDownloadTemplate = async () => {
+    // Require device selection before template download
+    if (!selectedDeviceId) {
+      alert("Please select a biometric device first before downloading the template.");
+      return;
+    }
+    
     setDownloadingTemplate(true);
     try {
-      const resp = await fetch(`${API_BASE}/attendance/template/download?month=${month}&year=${year}`, {
+      // Include deviceId and deviceCode in the URL
+      let url = `${API_BASE}/attendance/template/download?month=${month}&year=${year}`;
+      if (selectedDeviceId && selectedDeviceCode) {
+        url += `&deviceId=${selectedDeviceId}&deviceCode=${encodeURIComponent(selectedDeviceCode)}`;
+      }
+      
+      const resp = await fetch(url, {
         headers: { 
           "X-Tenant-Id": getTenantId(),
           "Authorization": `Bearer ${getToken()}`
@@ -170,14 +211,30 @@ function AttendanceSheet() {
       });
       if (!resp.ok) throw new Error("Failed to download template");
       const blob = await resp.blob();
-      const url = window.URL.createObjectURL(blob);
+      
+      // Get filename from Content-Disposition header or construct it
+      const contentDisposition = resp.headers.get('Content-Disposition');
+      let filename;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename=([^;]+)/);
+        filename = filenameMatch ? filenameMatch[1].replace(/"/g, '') : null;
+      }
+      if (!filename) {
+        if (selectedDeviceId && selectedDeviceCode) {
+          filename = `attendance_template_${year}_${String(month).padStart(2, '0')}_device_${selectedDeviceId}_${selectedDeviceCode}.xlsx`;
+        } else {
+          filename = `attendance_template_${year}_${String(month).padStart(2, '0')}.xlsx`;
+        }
+      }
+      
+      const urlBlob = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `attendance_template_${year}_${String(month).padStart(2, '0')}.xlsx`;
+      a.href = urlBlob;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(urlBlob);
     } catch (e) {
       alert("Failed to download template: " + (e.message || "Unknown error"));
     } finally {
@@ -218,12 +275,30 @@ function AttendanceSheet() {
   };
 
   const handleFileChange = (e) => {
-    setSelectedFile(e.target.files?.[0] ?? null);
+    const file = e.target.files?.[0] ?? null;
+    setSelectedFile(file);
     // Reset preview when file changes
     setPreviewData(null);
     setImportStep('upload');
     setImportResult(null);
     setImportError("");
+    
+    // Try to extract device info from filename
+    if (file) {
+      const deviceInfo = extractDeviceFromFilename(file.name);
+      if (deviceInfo) {
+        setDetectedDevice(deviceInfo);
+        // Auto-select the detected device
+        setSelectedDeviceId(String(deviceInfo.deviceId));
+        setSelectedDeviceCode(deviceInfo.deviceCode);
+        console.log('📟 Detected device from filename:', deviceInfo);
+      } else {
+        setDetectedDevice(null);
+        // Don't reset selected device - user might have already chosen one
+      }
+    } else {
+      setDetectedDevice(null);
+    }
   };
 
   // Step 1: Preview the file before importing
@@ -233,6 +308,12 @@ function AttendanceSheet() {
     const fileName = selectedFile.name.toLowerCase();
     if (!fileName.endsWith('.xls') && !fileName.endsWith('.xlsx') && !fileName.endsWith('.csv')) {
       return alert("Please upload a valid Excel file (.xls or .xlsx) or CSV file.");
+    }
+    
+    // Validate device selection or detection
+    const deviceIdToUse = detectedDevice ? detectedDevice.deviceId : selectedDeviceId;
+    if (!deviceIdToUse) {
+      return alert("Please select a biometric device first, or upload a template downloaded from the system.");
     }
     
     setImportError("");
@@ -245,11 +326,9 @@ function AttendanceSheet() {
       form.append("month", String(month));
       form.append("year", String(year));
       
-      // Build URL with optional deviceId
-      let url = `${API_BASE}/attendance/import/preview`;
-      if (selectedDeviceId) {
-        url += `?deviceId=${selectedDeviceId}`;
-      }
+      // Build URL with deviceId (required)
+      let url = `${API_BASE}/attendance/import/preview?deviceId=${deviceIdToUse}`;
+      console.log('📟 Preview with device:', deviceIdToUse, detectedDevice ? '(from filename)' : '(manually selected)');
       
       const resp = await fetch(url, {
         method: "POST",
@@ -283,6 +362,12 @@ function AttendanceSheet() {
   const handleConfirmImport = async () => {
     if (!selectedFile) return alert("No file selected.");
     
+    // Validate device selection or detection
+    const deviceIdToUse = detectedDevice ? detectedDevice.deviceId : selectedDeviceId;
+    if (!deviceIdToUse) {
+      return alert("Please select a biometric device first.");
+    }
+    
     setImportError("");
     setImportResult(null);
     
@@ -293,11 +378,9 @@ function AttendanceSheet() {
       form.append("month", String(month));
       form.append("year", String(year));
       
-      // Build URL with optional deviceId
-      let url = `${API_BASE}/attendance/import`;
-      if (selectedDeviceId) {
-        url += `?deviceId=${selectedDeviceId}`;
-      }
+      // Build URL with deviceId (required)
+      let url = `${API_BASE}/attendance/import?deviceId=${deviceIdToUse}`;
+      console.log('📟 Import with device:', deviceIdToUse, detectedDevice ? '(from filename)' : '(manually selected)');
       
       const resp = await fetch(url, {
         method: "POST",
@@ -332,6 +415,8 @@ function AttendanceSheet() {
     setPreviewData(null);
     setImportResult(null);
     setImportError("");
+    setDetectedDevice(null);
+    setSelectedFile(null);
   };
 
   const handleDeleteBatch = async (batchId, batchMonth, batchYear) => {
@@ -1126,23 +1211,25 @@ function AttendanceSheet() {
           {/* Step 1: Upload */}
           {importStep === 'upload' && !existingBatchForMonth && (
             <>
-              {/* Download Template */}
+              {/* Download Template - Requires device selection */}
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📥</span>
-                  Download Template (Optional)
+                  Step 1: Download Template
                 </h3>
                 <p className="text-slate-600 text-sm mb-4">
-                  Download an empty template for <strong>{MONTH_NAMES[month-1]} {year}</strong>, 
-                  or upload your biometric machine export directly.
+                  Download an attendance template for <strong>{MONTH_NAMES[month-1]} {year}</strong> 
+                  {selectedDeviceId && selectedDeviceCode && (
+                    <span className="text-emerald-700 font-medium"> for device: {selectedDeviceCode}</span>
+                  )}
                 </p>
                 <button 
                   onClick={handleDownloadTemplate}
-                  disabled={downloadingTemplate}
+                  disabled={downloadingTemplate || !selectedDeviceId}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
-                    downloadingTemplate 
+                    downloadingTemplate || !selectedDeviceId
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-md hover:shadow-lg'
+                      : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg'
                   }`}
                 >
                   {downloadingTemplate ? (
@@ -1150,46 +1237,82 @@ function AttendanceSheet() {
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       Downloading...
                     </>
+                  ) : !selectedDeviceId ? (
+                    <>🔒 Select Device First</>
                   ) : (
-                    <>📥 Download Template</>
+                    <>📥 Download Template for {selectedDeviceCode}</>
                   )}
                 </button>
+                {!selectedDeviceId && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    ⚠️ Select a biometric device above to download the template.
+                  </p>
+                )}
               </div>
 
               {/* Upload File */}
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📤</span>
-                  Upload Biometric File
+                  Step 2: Upload Biometric File
                 </h3>
                 
-                {/* Device Selection (for multi-device support) */}
-                {devices.length > 0 && (
-                  <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      <span className="text-lg mr-1">📟</span> 
-                      Select Biometric Device (Optional)
-                    </label>
-                    <select
-                      value={selectedDeviceId}
-                      onChange={(e) => setSelectedDeviceId(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    >
-                      <option value="">-- Direct Employee Code Matching (Default) --</option>
-                      {devices.map(d => (
-                        <option key={d.id} value={d.id}>
-                          {d.deviceCode} {d.deviceName ? `- ${d.deviceName}` : ''} 
-                          {d.isDefault ? ' ★ Default' : ''}
-                          {d.mappingCount > 0 ? ` (${d.mappingCount} mappings)` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {selectedDeviceId 
-                        ? '✅ Employee codes will be resolved using device mappings'
-                        : '💡 Leave empty to match employee codes directly (backward compatible)'
-                      }
+                {/* Device Selection - MANDATORY before import */}
+                <div className="mb-4 p-4 bg-emerald-50 rounded-lg border-2 border-emerald-300">
+                  <label className="block text-sm font-bold text-emerald-800 mb-2">
+                    <span className="text-lg mr-1">📟</span> 
+                    Step 0: Select Biometric Device (Required)
+                  </label>
+                  {devicesLoading ? (
+                    <p className="text-sm text-slate-500">Loading devices...</p>
+                  ) : devices.length === 0 ? (
+                    <p className="text-sm text-amber-600">⚠️ No biometric devices found. Please create a device first.</p>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedDeviceId}
+                        onChange={(e) => {
+                          const deviceId = e.target.value;
+                          setSelectedDeviceId(deviceId);
+                          const device = devices.find(d => String(d.id) === deviceId);
+                          setSelectedDeviceCode(device ? device.deviceCode : '');
+                          // Reset detected device when manually changing
+                          setDetectedDevice(null);
+                        }}
+                        className="w-full px-3 py-2 border-2 border-emerald-400 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                      >
+                        <option value="">-- Select a biometric device --</option>
+                        {devices.map(d => (
+                          <option key={d.id} value={d.id}>
+                            {d.deviceCode} {d.deviceName ? `- ${d.deviceName}` : ''} 
+                            {d.isDefault ? ' ★ Default' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedDeviceId ? (
+                        <p className="text-xs text-emerald-700 mt-2 font-medium">
+                          ✅ Device selected: {selectedDeviceCode}. Now download template or upload attendance file.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-600 mt-2">
+                          ⚠️ Please select a device first. The template will include employees assigned to this device.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                {/* Show detected device from uploaded file */}
+                {detectedDevice && (
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-300">
+                    <p className="text-sm text-blue-800">
+                      <span className="font-bold">📁 File belongs to device:</span> {detectedDevice.deviceCode} (ID: {detectedDevice.deviceId})
                     </p>
+                    {String(detectedDevice.deviceId) !== selectedDeviceId && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        ⚠️ Selected device doesn't match file. Device from file will be used.
+                      </p>
+                    )}
                   </div>
                 )}
                 
