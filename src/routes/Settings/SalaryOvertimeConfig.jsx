@@ -64,6 +64,16 @@ function SalaryOvertimeConfig() {
     lateArrivalGraceMins: 0,
     halfDayMinHours: 4,
     fullDayMinHours: 7,
+    
+    // Statutory Deduction Rates (Organization-Level)
+    esiEmployeeRate: 0.0075,
+    esiEmployerRate: 0.0325,
+    esiWageCeiling: 21000,
+    pfEmployeeRate: 0.06,
+    pfEmployerRate: 0.06,
+    pfWageCeiling: 15000,
+    pfCalculationBase: "FULL_PAYMENT",
+    professionalTaxAmount: 0,
   });
 
   useEffect(() => {
@@ -546,10 +556,183 @@ function SalaryOvertimeConfig() {
           </div>
         </div>
 
+        {/* Statutory Deductions */}
+        <div className="bg-white rounded-2xl shadow-sm border p-6 mt-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <span className="text-2xl">🏛️</span> Statutory Deduction Rates (Organization-Level)
+          </h2>
+          <p className="text-sm text-slate-500 mb-4">
+            These rates apply to all employees in your organization. Individual employee flags (ESI Applicable, PF Applicable) control whether deductions apply.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* ESI Employee Rate */}
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <label className="block font-medium text-blue-700 mb-2">
+                ESI Employee Rate (%)
+              </label>
+              <p className="text-sm text-blue-600 mb-3">
+                Employee contribution to ESI
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={(config.esiEmployeeRate * 100).toFixed(2)}
+                  onChange={(e) => handleChange("esiEmployeeRate", (parseFloat(e.target.value) || 0) / 100)}
+                  className="w-24 px-3 py-2 border rounded-lg"
+                  min="0" max="10"
+                />
+                <span className="text-sm text-blue-600">%</span>
+              </div>
+              <p className="text-xs text-blue-500 mt-2">
+                Standard: 0.75%
+              </p>
+            </div>
+
+            {/* ESI Employer Rate */}
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <label className="block font-medium text-blue-700 mb-2">
+                ESI Employer Rate (%)
+              </label>
+              <p className="text-sm text-blue-600 mb-3">
+                Employer contribution to ESI
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={(config.esiEmployerRate * 100).toFixed(2)}
+                  onChange={(e) => handleChange("esiEmployerRate", (parseFloat(e.target.value) || 0) / 100)}
+                  className="w-24 px-3 py-2 border rounded-lg"
+                  min="0" max="10"
+                />
+                <span className="text-sm text-blue-600">%</span>
+              </div>
+              <p className="text-xs text-blue-500 mt-2">
+                Standard: 3.25%
+              </p>
+            </div>
+
+            {/* ESI Wage Ceiling */}
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <label className="block font-medium text-blue-700 mb-2">
+                ESI Wage Ceiling (₹)
+              </label>
+              <p className="text-sm text-blue-600 mb-3">
+                Employees above this are exempt
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-blue-600">₹</span>
+                <input
+                  type="number"
+                  value={config.esiWageCeiling}
+                  onChange={(e) => handleChange("esiWageCeiling", parseInt(e.target.value) || 0)}
+                  className="w-32 px-3 py-2 border rounded-lg"
+                  min="0"
+                />
+              </div>
+              <p className="text-xs text-blue-500 mt-2">
+                Standard: ₹21,000/month
+              </p>
+            </div>
+
+            {/* PF Employee Rate */}
+            <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+              <label className="block font-medium text-green-700 mb-2">
+                PF Employee Rate (%)
+              </label>
+              <p className="text-sm text-green-600 mb-3">
+                Employee contribution to PF
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(config.pfEmployeeRate * 100).toFixed(1)}
+                  onChange={(e) => handleChange("pfEmployeeRate", (parseFloat(e.target.value) || 0) / 100)}
+                  className="w-24 px-3 py-2 border rounded-lg"
+                  min="0" max="20"
+                />
+                <span className="text-sm text-green-600">%</span>
+              </div>
+              <p className="text-xs text-green-500 mt-2">
+                Standard: 6% or 12%
+              </p>
+            </div>
+
+            {/* PF Employer Rate */}
+            <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+              <label className="block font-medium text-green-700 mb-2">
+                PF Employer Rate (%)
+              </label>
+              <p className="text-sm text-green-600 mb-3">
+                Employer contribution to PF
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(config.pfEmployerRate * 100).toFixed(1)}
+                  onChange={(e) => handleChange("pfEmployerRate", (parseFloat(e.target.value) || 0) / 100)}
+                  className="w-24 px-3 py-2 border rounded-lg"
+                  min="0" max="20"
+                />
+                <span className="text-sm text-green-600">%</span>
+              </div>
+              <p className="text-xs text-green-500 mt-2">
+                Standard: 6% or 12%
+              </p>
+            </div>
+
+            {/* PF Calculation Base */}
+            <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+              <label className="block font-medium text-green-700 mb-2">
+                PF Calculation Base
+              </label>
+              <p className="text-sm text-green-600 mb-3">
+                What salary to calculate PF on
+              </p>
+              <select
+                value={config.pfCalculationBase}
+                onChange={(e) => handleChange("pfCalculationBase", e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="BASIC">Basic Salary Only</option>
+                <option value="FULL_PAYMENT">Basic + Increment (Full Payment)</option>
+              </select>
+            </div>
+
+            {/* Professional Tax */}
+            <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
+              <label className="block font-medium text-purple-700 mb-2">
+                Professional Tax (₹)
+              </label>
+              <p className="text-sm text-purple-600 mb-3">
+                Fixed monthly PT amount
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-purple-600">₹</span>
+                <input
+                  type="number"
+                  value={config.professionalTaxAmount}
+                  onChange={(e) => handleChange("professionalTaxAmount", parseInt(e.target.value) || 0)}
+                  className="w-32 px-3 py-2 border rounded-lg"
+                  min="0"
+                />
+                <span className="text-sm text-purple-600">/month</span>
+              </div>
+              <p className="text-xs text-purple-500 mt-2">
+                Varies by state (0 = Not applicable)
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Summary Card */}
         <div className="mt-6 p-4 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl text-white">
           <h3 className="font-semibold mb-2">📋 Configuration Summary</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
             <div className="bg-white/20 p-2 rounded-lg">
               <div className="text-white/80">Full Salary After</div>
               <div className="font-bold">{config.fullMonthSalaryThresholdDays} days</div>
@@ -565,6 +748,14 @@ function SalaryOvertimeConfig() {
             <div className="bg-white/20 p-2 rounded-lg">
               <div className="text-white/80">Lates = 1 Absent</div>
               <div className="font-bold">{config.lateArrivalsPerAbsent} times</div>
+            </div>
+            <div className="bg-white/20 p-2 rounded-lg">
+              <div className="text-white/80">ESI Employee</div>
+              <div className="font-bold">{(config.esiEmployeeRate * 100).toFixed(2)}%</div>
+            </div>
+            <div className="bg-white/20 p-2 rounded-lg">
+              <div className="text-white/80">PF Employee</div>
+              <div className="font-bold">{(config.pfEmployeeRate * 100).toFixed(1)}%</div>
             </div>
           </div>
         </div>
