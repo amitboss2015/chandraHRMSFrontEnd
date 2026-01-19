@@ -84,6 +84,34 @@ const normalizeRow = (row) => {
   return model;
 };
 
+// Encode device info into a filename-safe token
+const encodeDeviceToken = (deviceId, deviceCode) => {
+  const payload = JSON.stringify({ d: deviceId, c: deviceCode, t: Date.now() });
+  return btoa(payload).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+};
+
+// Decode device token from filename
+const decodeDeviceToken = (token) => {
+  try {
+    const base64 = token.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+    const payload = JSON.parse(atob(padded));
+    return { deviceId: payload.d, deviceCode: payload.c, timestamp: payload.t };
+  } catch (e) {
+    console.error("Failed to decode device token:", e);
+    return null;
+  }
+};
+
+// Extract device token from filename pattern: employee_template_[TOKEN].xlsx
+const extractDeviceFromFilename = (filename) => {
+  const match = filename.match(/employee_template_([A-Za-z0-9_-]+)\.xlsx$/i);
+  if (match) {
+    return decodeDeviceToken(match[1]);
+  }
+  return null;
+};
+
 export default function EmployeeList() {
   const nav = useNavigate();
   const [employees, setEmployees] = useState([]);
@@ -102,6 +130,12 @@ export default function EmployeeList() {
   const [importResult, setImportResult] = useState(null);
   const [showErrors, setShowErrors] = useState(false);
   const fileInputRef = useRef(null);
+  
+  // Biometric device state
+  const [devices, setDevices] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [detectedDevice, setDetectedDevice] = useState(null);
 
   const authHeaders = useMemo(() => {
     const t = getToken();
@@ -142,6 +176,34 @@ export default function EmployeeList() {
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
+
+  // Load biometric devices when import modal opens
+  useEffect(() => {
+    if (!showImportModal) return;
+    
+    const loadDevices = async () => {
+      setLoadingDevices(true);
+      try {
+        const res = await fetch(`${API_BASE}/devices`, { headers: authHeaders });
+        if (res.ok) {
+          const data = await res.json();
+          setDevices(Array.isArray(data) ? data : []);
+          // Auto-select default device if exists
+          const defaultDevice = data.find(d => d.isDefault);
+          if (defaultDevice) {
+            setSelectedDeviceId(String(defaultDevice.id));
+          } else if (data.length === 1) {
+            setSelectedDeviceId(String(data[0].id));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load devices:", e);
+      } finally {
+        setLoadingDevices(false);
+      }
+    };
+    loadDevices();
+  }, [showImportModal, authHeaders]);
 
   // Get unique departments for filter
   const departments = useMemo(() => {
@@ -223,12 +285,27 @@ export default function EmployeeList() {
   // ==================== IMPORT MODAL FUNCTIONS ====================
   
   const downloadTemplate = async (full = false) => {
+    if (!selectedDeviceId) {
+      alert("Please select a biometric device first");
+      return;
+    }
+    
+    const selectedDevice = devices.find(d => String(d.id) === selectedDeviceId);
+    if (!selectedDevice) {
+      alert("Selected device not found");
+      return;
+    }
+    
     try {
-      const url = `${API_BASE}/employees/template/download?full=${full}`;
+      const url = `${API_BASE}/employees/template/download?full=${full}&deviceId=${selectedDeviceId}`;
       const res = await fetch(url, { headers: authHeaders });
       if (!res.ok) throw new Error("Failed to download template");
       const blob = await res.blob();
-      const filename = full ? "employee_import_template_full.xlsx" : "employee_import_template.xlsx";
+      
+      // Encode device info in filename
+      const deviceToken = encodeDeviceToken(selectedDevice.id, selectedDevice.deviceCode);
+      const filename = `employee_template_${deviceToken}.xlsx`;
+      
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -239,8 +316,7 @@ export default function EmployeeList() {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (error) {
       console.error(error);
-      // Fallback to local template generation
-      handleExportTemplate();
+      alert("Failed to download template: " + error.message);
     }
   };
 
@@ -251,6 +327,23 @@ export default function EmployeeList() {
       alert("Please select a valid Excel file (.xlsx or .xls)");
       return;
     }
+    
+    // Try to extract device info from filename
+    const deviceInfo = extractDeviceFromFilename(selectedFile.name);
+    if (deviceInfo) {
+      setDetectedDevice(deviceInfo);
+      // Find matching device in our list
+      const matchingDevice = devices.find(d => d.id === deviceInfo.deviceId);
+      if (matchingDevice) {
+        setSelectedDeviceId(String(matchingDevice.id));
+      } else {
+        // Device mismatch - could be tampered or from different tenant
+        setDetectedDevice({ ...deviceInfo, mismatch: true });
+      }
+    } else {
+      setDetectedDevice(null);
+    }
+    
     setImportFile(selectedFile);
     setImportResult(null);
   };
@@ -268,11 +361,37 @@ export default function EmployeeList() {
 
   const handleImportSubmit = async () => {
     if (!importFile) return alert("Please select a file first");
+    
+    // Validate device selection
+    if (!selectedDeviceId && !detectedDevice) {
+      alert("Please select a biometric device first, or use a template downloaded from this system.");
+      return;
+    }
+    
+    // Check for device mismatch (tampering detection)
+    if (detectedDevice?.mismatch) {
+      const proceed = confirm(
+        "⚠️ Warning: The device encoded in the filename does not match any device in your system.\n\n" +
+        "This could mean:\n" +
+        "• The file was modified\n" +
+        "• The file is from a different organization\n\n" +
+        "Do you want to continue with the currently selected device?"
+      );
+      if (!proceed) return;
+    }
+    
     setImporting(true);
     setImportResult(null);
     try {
       const formData = new FormData();
       formData.append("file", importFile);
+      
+      // Send device ID - prioritize detected device from filename, fallback to selected
+      const deviceIdToUse = detectedDevice?.deviceId || selectedDeviceId;
+      if (deviceIdToUse) {
+        formData.append("deviceId", deviceIdToUse);
+      }
+      
       const res = await fetch(`${API_BASE}/employees/import`, {
         method: "POST",
         headers: { 
@@ -298,6 +417,7 @@ export default function EmployeeList() {
     setImportFile(null);
     setImportResult(null);
     setShowErrors(false);
+    setDetectedDevice(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -642,23 +762,74 @@ export default function EmployeeList() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Step 0: Select Biometric Device */}
+              <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-purple-500 text-white flex items-center justify-center text-sm font-bold">🔐</div>
+                  <div>
+                    <h3 className="font-semibold text-purple-900">Select Biometric Device</h3>
+                    <p className="text-xs text-purple-700">Choose the device these employees will be associated with</p>
+                  </div>
+                </div>
+                <div className="max-w-md">
+                  <select
+                    className="w-full px-4 py-2.5 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm"
+                    value={selectedDeviceId}
+                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                    disabled={loadingDevices}
+                  >
+                    <option value="">-- Select Device --</option>
+                    {devices.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.deviceName} ({device.deviceCode})
+                        {device.isDefault ? ' ⭐ Default' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {loadingDevices && (
+                    <p className="mt-2 text-xs text-purple-600 flex items-center gap-2">
+                      <span className="w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></span>
+                      Loading devices...
+                    </p>
+                  )}
+                  {!loadingDevices && devices.length === 0 && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      ⚠️ No biometric devices found. Please add a device in Settings → Biometric Devices first.
+                    </p>
+                  )}
+                </div>
+                {selectedDeviceId && (
+                  <div className="mt-3 p-2 bg-purple-100 border border-purple-200 rounded-lg text-xs text-purple-800">
+                    💡 The selected device will be embedded in the template filename. When you import the filled template,
+                    employees will automatically be associated with this device.
+                  </div>
+                )}
+              </div>
+
               {/* Step 1: Download Template */}
-              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+              <div className={`bg-blue-50 rounded-xl p-4 border border-blue-100 ${!selectedDeviceId ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-7 h-7 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold">1</div>
                   <h3 className="font-semibold text-blue-900">Download Template</h3>
                 </div>
                 <p className="text-sm text-blue-700 mb-3">Get the Excel template, fill in employee data, then upload it back.</p>
+                {selectedDeviceId && (
+                  <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800">
+                    ✅ Template will be linked to: <strong>{devices.find(d => String(d.id) === selectedDeviceId)?.deviceName}</strong>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-3">
                   <button
                     onClick={() => downloadTemplate(false)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                    disabled={!selectedDeviceId}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     📥 Basic Template
                   </button>
                   <button
                     onClick={() => downloadTemplate(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium"
+                    disabled={!selectedDeviceId}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     📋 Full Template
                   </button>
@@ -666,11 +837,32 @@ export default function EmployeeList() {
               </div>
 
               {/* Step 2: Upload File */}
-              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+              <div className={`bg-emerald-50 rounded-xl p-4 border border-emerald-100 ${!selectedDeviceId ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">2</div>
                   <h3 className="font-semibold text-emerald-900">Upload Filled Template</h3>
                 </div>
+                
+                {/* Detected Device Info */}
+                {detectedDevice && (
+                  <div className={`mb-3 p-2 rounded-lg text-xs ${
+                    detectedDevice.mismatch 
+                      ? 'bg-red-50 border border-red-200 text-red-800'
+                      : 'bg-green-50 border border-green-200 text-green-800'
+                  }`}>
+                    {detectedDevice.mismatch ? (
+                      <>
+                        ⚠️ <strong>Device Mismatch:</strong> The template was created for device ID {detectedDevice.deviceId} 
+                        ({detectedDevice.deviceCode}), but this device is not found in your system.
+                      </>
+                    ) : (
+                      <>
+                        ✅ <strong>Device Detected:</strong> Template linked to{' '}
+                        <strong>{devices.find(d => d.id === detectedDevice.deviceId)?.deviceName || detectedDevice.deviceCode}</strong>
+                      </>
+                    )}
+                  </div>
+                )}
                 
                 {/* Drop Zone */}
                 <div
