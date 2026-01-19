@@ -181,8 +181,8 @@ function CompanyRegister() {
         {/* Header */}
         <div className="text-center mb-6">
           <Link to="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
-              <span className="text-xl">🌙</span>
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+              <span className="text-xl font-bold text-white">C</span>
             </div>
             <span className="text-xl font-bold text-slate-800">ChandraHR</span>
           </Link>

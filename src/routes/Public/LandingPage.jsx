@@ -13,8 +13,8 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
-                <span className="text-xl">🌙</span>
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+                <span className="text-xl font-bold text-white">C</span>
               </div>
               <span className="text-xl font-bold">ChandraHR</span>
             </div>
@@ -257,8 +257,8 @@ function LandingPage() {
       <footer className="py-10 px-4 border-t border-slate-800">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center">
-              <span className="text-sm">🌙</span>
+            <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+              <span className="text-sm font-bold text-white">C</span>
             </div>
             <span className="font-bold">ChandraHR</span>
           </div>

@@ -53,7 +53,7 @@ function Login() {
           {/* Header */}
           <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-8 py-10 text-center">
             <div className="w-20 h-20 mx-auto bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4">
-              <span className="text-4xl">🌙</span>
+              <span className="text-4xl font-bold text-emerald-600">C</span>
             </div>
             <h1 className="text-2xl font-bold text-white">ChandraHR</h1>
             <p className="text-emerald-100 text-sm mt-1">Workforce Management Made Simple</p>
