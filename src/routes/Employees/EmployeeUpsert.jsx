@@ -85,6 +85,11 @@ const fromApi = (e) => ({
   // Emergency
   emergency_contact_name: e.emergencyContactName ?? "",
   emergency_contact_phone: e.emergencyContactPhone ?? "",
+  // Biometric device
+  biometric_device_id: e.biometricDeviceId ?? null,
+  biometric_device_name: e.biometricDeviceName ?? "",
+  device_emp_code: e.deviceEmpCode ?? "",
+  use_emp_code_as_device_code: e.useEmpCodeAsDeviceCode ?? true,
 });
 
 const toApi = (f) => ({
@@ -145,6 +150,10 @@ const toApi = (f) => ({
   // Emergency
   emergencyContactName: f.emergency_contact_name || null,
   emergencyContactPhone: f.emergency_contact_phone || null,
+  // Biometric device
+  biometricDeviceId: f.biometric_device_id || null,
+  deviceEmpCode: f.use_emp_code_as_device_code ? null : (f.device_emp_code || null),
+  useEmpCodeAsDeviceCode: f.use_emp_code_as_device_code,
 });
 
 // API calls
@@ -165,6 +174,7 @@ const getEmployee = (empCode) => apiGet(`${API_BASE}/employees/${encodeURICompon
 const createEmployee = (payload) => apiSend(`${API_BASE}/employees`, "POST", payload);
 const updateEmployee = (empCode, payload) =>
   apiSend(`${API_BASE}/employees/${encodeURIComponent(empCode)}`, "PUT", payload);
+const getDevices = () => apiGet(`${API_BASE}/attendance/devices`);
 
 // Empty form
 const empty = {
@@ -211,6 +221,11 @@ const empty = {
   standard_working_hours: 8,
   emergency_contact_name: "",
   emergency_contact_phone: "",
+  // Biometric device
+  biometric_device_id: null,
+  biometric_device_name: "",
+  device_emp_code: "",
+  use_emp_code_as_device_code: true,
 };
 
 export default function EmployeeUpsert({ mode = "create" }) {
@@ -224,8 +239,22 @@ export default function EmployeeUpsert({ mode = "create" }) {
   const [activeSection, setActiveSection] = useState("personal");
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [devices, setDevices] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
 
   const fetchedOnce = useRef(false);
+
+  // Load biometric devices
+  useEffect(() => {
+    setLoadingDevices(true);
+    getDevices()
+      .then((data) => setDevices(Array.isArray(data) ? data : []))
+      .catch((e) => {
+        console.error("Failed to load devices:", e);
+        setDevices([]);
+      })
+      .finally(() => setLoadingDevices(false));
+  }, []);
 
   useEffect(() => {
     if (fetchedOnce.current) return;
@@ -408,6 +437,7 @@ export default function EmployeeUpsert({ mode = "create" }) {
   const sections = [
     { id: "personal", label: "Personal Info", icon: "👤" },
     { id: "employment", label: "Employment", icon: "💼" },
+    { id: "biometric", label: "Biometric Device", icon: "🔐" },
     { id: "salary", label: "Salary & Allowances", icon: "💰" },
     { id: "bank", label: "Bank & KYC", icon: "🏦" },
     { id: "deductions", label: "Deductions", icon: "📋" },
@@ -633,6 +663,69 @@ export default function EmployeeUpsert({ mode = "create" }) {
                     onChange={(e) => onChange("working_days_per_month", e.target.value)}
                   />
                 </Field>
+              </div>
+            </Section>
+
+            {/* Biometric Device */}
+            <Section
+              id="biometric"
+              title="Biometric Device"
+              icon="🔐"
+              description="Attendance device association"
+              isActive={activeSection === "biometric"}
+              onToggle={() => setActiveSection(activeSection === "biometric" ? "" : "biometric")}
+            >
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                  <strong>💡 How it works:</strong> Link this employee to a biometric device for attendance tracking. 
+                  The "Device Employee Code" is how this employee is identified in the biometric machine 
+                  (often different from the HRMS code).
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Biometric Device">
+                    <select
+                      className="input-field"
+                      value={form.biometric_device_id || ""}
+                      onChange={(e) => onChange("biometric_device_id", e.target.value ? Number(e.target.value) : null)}
+                      disabled={loadingDevices}
+                    >
+                      <option value="">-- Select Device --</option>
+                      {devices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                          {device.deviceName} ({device.deviceCode})
+                        </option>
+                      ))}
+                    </select>
+                    {loadingDevices && <p className="text-xs text-slate-400 mt-1">Loading devices...</p>}
+                    {!loadingDevices && devices.length === 0 && (
+                      <p className="text-xs text-amber-500 mt-1">No devices found. Please add devices in Settings → Biometric Devices.</p>
+                    )}
+                  </Field>
+                  
+                  <div className="space-y-2">
+                    <Field label="Device Employee Code" hint="Code in the biometric machine">
+                      <div className="flex items-center gap-2">
+                        <input
+                          className={`input-field flex-1 ${form.use_emp_code_as_device_code ? "bg-slate-100" : ""}`}
+                          value={form.use_emp_code_as_device_code ? form.emp_code : form.device_emp_code}
+                          onChange={(e) => onChange("device_emp_code", e.target.value)}
+                          placeholder="e.g., 101"
+                          disabled={form.use_emp_code_as_device_code}
+                        />
+                      </div>
+                    </Field>
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.use_emp_code_as_device_code}
+                        onChange={(e) => onChange("use_emp_code_as_device_code", e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      Same as Employee Code
+                    </label>
+                  </div>
+                </div>
               </div>
             </Section>
 
