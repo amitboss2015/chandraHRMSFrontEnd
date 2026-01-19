@@ -171,11 +171,11 @@ async function tryRefreshToken() {
 }
 
 /**
- * Fetch with FormData (for file uploads) - includes auth and tenant header
+ * Fetch with FormData (for file uploads) - includes auth, tenant header, and token refresh
  */
 async function fetchFormData(url, formData, method = 'POST') {
   const tenantId = getCurrentTenantId();
-  const accessToken = getAccessToken();
+  let accessToken = getAccessToken();
   
   const headers = {
     'X-Tenant-Id': tenantId,
@@ -185,16 +185,42 @@ async function fetchFormData(url, formData, method = 'POST') {
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
   
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     method,
     headers,
     body: formData,
     credentials: 'include',
   });
   
-  if (response.status === 401) {
-    handleUnauthorized();
-    throw new Error('Session expired. Please login again.');
+  // Handle 401 Unauthorized or 403 Forbidden (expired token)
+  if (response.status === 401 || response.status === 403) {
+    console.log(`🔒 FormData auth error (${response.status}), attempting token refresh...`);
+    
+    // Try to refresh token
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Update token and retry
+      accessToken = getAccessToken();
+      headers['Authorization'] = `Bearer ${accessToken}`;
+      
+      response = await fetch(url, {
+        method,
+        headers,
+        body: formData,
+        credentials: 'include',
+      });
+      
+      // If still getting auth error after refresh, redirect to login
+      if (response.status === 401 || response.status === 403) {
+        console.log('🔒 Still getting auth error after refresh, redirecting to login');
+        handleUnauthorized();
+        throw new Error('Session expired. Please login again.');
+      }
+    } else {
+      console.log('🔒 Token refresh failed, redirecting to login');
+      handleUnauthorized();
+      throw new Error('Session expired. Please login again.');
+    }
   }
   
   if (!response.ok) {

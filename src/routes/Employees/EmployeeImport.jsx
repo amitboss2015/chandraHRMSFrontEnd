@@ -20,6 +20,60 @@ const getToken = () =>
 const getTenantId = () =>
   localStorage.getItem("hrms_tenant_id") || "SASA001";
 
+// Token refresh helper
+const tryRefreshToken = async () => {
+  try {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': getTenantId(),
+      },
+      credentials: 'include',
+    });
+    if (response.ok) {
+      const data = await response.json();
+      sessionStorage.setItem('hrms_access_token', data.accessToken);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Token refresh failed:', err);
+    return false;
+  }
+};
+
+// Helper to fetch with auto-refresh on 401/403
+const fetchWithRefresh = async (url, options = {}) => {
+  let response = await fetch(url, options);
+  
+  if (response.status === 401 || response.status === 403) {
+    console.log(`🔒 Auth error (${response.status}), attempting token refresh...`);
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Update token in headers and retry
+      const newHeaders = {
+        ...options.headers,
+        'Authorization': `Bearer ${getToken()}`,
+      };
+      response = await fetch(url, { ...options, headers: newHeaders });
+      
+      if (response.status === 401 || response.status === 403) {
+        // Still failing after refresh, redirect to login
+        sessionStorage.removeItem('hrms_access_token');
+        window.location.href = '/login';
+        throw new Error('Session expired. Please login again.');
+      }
+    } else {
+      sessionStorage.removeItem('hrms_access_token');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please login again.');
+    }
+  }
+  
+  return response;
+};
+
 // Encode device info into a filename-safe token
 const encodeDeviceToken = (deviceId, deviceCode) => {
   const payload = JSON.stringify({ d: deviceId, c: deviceCode, t: Date.now() });
@@ -242,7 +296,8 @@ export default function EmployeeImport() {
         formData.append("deviceId", deviceIdToUse);
       }
 
-      const res = await fetch(`${API_BASE}/employees/import`, {
+      // Use fetchWithRefresh for auto token refresh on 401/403
+      const res = await fetchWithRefresh(`${API_BASE}/employees/import`, {
         method: "POST",
         headers: authHeaders(),
         body: formData
