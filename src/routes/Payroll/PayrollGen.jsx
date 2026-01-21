@@ -242,12 +242,17 @@ function PayrollGen() {
   const deleteAllPayrolls = async () => {
     if (!confirm('Are you sure you want to delete ALL payrolls for this month?')) return;
     try {
-      await payrollApi.deleteMonthly(year, month);
-      setMessage({ type: 'success', text: 'All payrolls deleted!' });
+      const result = await payrollApi.deleteMonthly(year, month);
+      if (result.success) {
+        setMessage({ type: 'success', text: result.message || 'All payrolls deleted!' });
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Failed to delete payrolls' });
+      }
       await loadPayrolls();
     } catch (error) {
       console.error('Failed to delete payrolls:', error);
-      setMessage({ type: 'error', text: 'Cannot delete payrolls (all must be in DRAFT status)' });
+      const errorMsg = error.error || error.message || 'Cannot delete payrolls (all must be in DRAFT status)';
+      setMessage({ type: 'error', text: errorMsg });
     }
   };
 
@@ -467,20 +472,25 @@ function PayrollGen() {
                   <th className="px-2 py-3 text-left">EMP NAME</th>
                   <th className="px-2 py-3 text-left">EMP ID</th>
                   <th className="px-2 py-3 text-right">BASIC</th>
+                  <th className="px-2 py-3 text-right">INCR.</th>
                   <th className="px-2 py-3 text-right">FINAL PAY</th>
                   <th className="px-2 py-3 text-center">W.DAY</th>
                   <th className="px-2 py-3 text-center">PRES.</th>
                   <th className="px-2 py-3 text-center">ABS.</th>
                   <th className="px-2 py-3 text-right">W.DAY AMT</th>
-                  <th className="px-2 py-3 text-center">OT</th>
-                  <th className="px-2 py-3 text-right">OT AMT</th>
+                  <th className="px-2 py-3 text-center" title="OT Days (worked on holiday/weekly off)">OT DAY</th>
+                  <th className="px-2 py-3 text-center" title="OT Hours (extra hours worked)">OT HRS</th>
+                  <th className="px-2 py-3 text-right" title="OT Day Amount">OT DAY AMT</th>
+                  <th className="px-2 py-3 text-right" title="OT Hour Amount">OT HR AMT</th>
                   <th className="px-2 py-3 text-right bg-green-700">GROSS</th>
-                  <th className="px-2 py-3 text-right">ESI</th>
-                  <th className="px-2 py-3 text-right">PF</th>
+                  <th className="px-2 py-3 text-right" title="ESI 0.75% (if salary ≤ ₹21,000)">ESI</th>
+                  <th className="px-2 py-3 text-right" title="PF Employee 6%">PF OWN</th>
+                  <th className="px-2 py-3 text-right" title="PF Company 6%">PF CO.</th>
                   <th className="px-2 py-3 text-right bg-amber-600">LOAN EMI</th>
                   <th className="px-2 py-3 text-right bg-orange-600">ADV</th>
                   <th className="px-2 py-3 text-right">DUE</th>
                   <th className="px-2 py-3 text-right bg-blue-700">NET SAL</th>
+                  <th className="px-2 py-3 text-left">REMARKS</th>
                   <th className="px-2 py-3 text-center">STATUS</th>
                   <th className="px-2 py-3 text-center">ACTIONS</th>
                 </tr>
@@ -496,18 +506,22 @@ function PayrollGen() {
                     <td className="px-2 py-2 font-medium text-gray-900">{p.empName || p.empId}</td>
                     <td className="px-2 py-2 text-gray-600">{p.empId}</td>
                     <td className="px-2 py-2 text-right">{formatCurrency(p.basicSalary)}</td>
+                    <td className="px-2 py-2 text-right text-purple-600">{formatCurrency(p.increment)}</td>
                     <td className="px-2 py-2 text-right font-medium">{formatCurrency(p.finalPayment)}</td>
                     <td className="px-2 py-2 text-center">{p.totalWorkingDays || 0}</td>
                     <td className="px-2 py-2 text-center font-medium text-green-600">{p.presentDays || 0}</td>
                     <td className="px-2 py-2 text-center text-red-600">{p.absentDays || 0}</td>
                     <td className="px-2 py-2 text-right">{formatCurrency(p.workingDayAmount)}</td>
                     <td className="px-2 py-2 text-center">{p.overtimeDays || 0}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency((p.overtimeDayAmount || 0) + (p.overtimeHourAmount || 0))}</td>
+                    <td className="px-2 py-2 text-center">{p.overtimeHours ? parseFloat(p.overtimeHours).toFixed(2) : '0.00'}</td>
+                    <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeDayAmount)}</td>
+                    <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeHourAmount)}</td>
                     <td className="px-2 py-2 text-right font-bold text-green-700 bg-green-50">
                       {formatCurrency(p.grossSalary)}
                     </td>
                     <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.esiEmployee)}</td>
                     <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.pfEmployee)}</td>
+                    <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.pfCompany)}</td>
                     <td className="px-2 py-2 text-right text-amber-700 bg-amber-50 font-medium">
                       {formatCurrency(p.loanDeduction)}
                     </td>
@@ -517,6 +531,9 @@ function PayrollGen() {
                     <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.due)}</td>
                     <td className="px-2 py-2 text-right font-bold text-blue-700 bg-blue-50">
                       {formatCurrency(p.netSalary)}
+                    </td>
+                    <td className="px-2 py-2 text-left text-xs text-gray-600 max-w-[120px] truncate" title={p.remarks || ''}>
+                      {p.remarks || '-'}
                     </td>
                     <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
                       {getStatusBadge(p.status)}
@@ -570,13 +587,19 @@ function PayrollGen() {
               {/* Totals Row */}
               <tfoot className="bg-slate-100 font-bold">
                 <tr>
-                  <td colSpan={8} className="px-2 py-3 text-right">TOTALS:</td>
+                  <td colSpan={9} className="px-2 py-3 text-right">TOTALS:</td>
                   <td className="px-2 py-3 text-right">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.workingDayAmount || 0), 0))}
                   </td>
-                  <td></td>
-                  <td className="px-2 py-3 text-right">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeDayAmount || 0) + (p.overtimeHourAmount || 0), 0))}
+                  <td></td>{/* OT Days - no sum */}
+                  <td className="px-2 py-3 text-center">
+                    {payrolls.reduce((s, p) => s + parseFloat(p.overtimeHours || 0), 0).toFixed(2)}
+                  </td>
+                  <td className="px-2 py-3 text-right text-indigo-600">
+                    {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeDayAmount || 0), 0))}
+                  </td>
+                  <td className="px-2 py-3 text-right text-indigo-600">
+                    {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeHourAmount || 0), 0))}
                   </td>
                   <td className="px-2 py-3 text-right text-green-700 bg-green-100">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.grossSalary || 0), 0))}
@@ -586,6 +609,9 @@ function PayrollGen() {
                   </td>
                   <td className="px-2 py-3 text-right text-red-600">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.pfEmployee || 0), 0))}
+                  </td>
+                  <td className="px-2 py-3 text-right text-red-600">
+                    {formatCurrency(payrolls.reduce((s, p) => s + (p.pfCompany || 0), 0))}
                   </td>
                   <td className="px-2 py-3 text-right text-amber-700 bg-amber-100">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.loanDeduction || 0), 0))}
@@ -599,7 +625,7 @@ function PayrollGen() {
                   <td className="px-2 py-3 text-right text-blue-700 bg-blue-100">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.netSalary || 0), 0))}
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={3}></td>
                 </tr>
               </tfoot>
             </table>
