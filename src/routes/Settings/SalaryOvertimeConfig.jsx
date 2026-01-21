@@ -576,17 +576,34 @@ function SalaryOvertimeConfig() {
               </p>
               <div className="flex items-center gap-2">
                 <input
-                  type="number"
-                  step="0.01"
-                  value={(config.esiEmployeeRate * 100).toFixed(2)}
-                  onChange={(e) => handleChange("esiEmployeeRate", (parseFloat(e.target.value) || 0) / 100)}
-                  className="w-24 px-3 py-2 border rounded-lg"
-                  min="0" max="10"
+                  type="text"
+                  inputMode="decimal"
+                  value={config.esiEmployeeRateDisplay ?? (config.esiEmployeeRate * 100)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                      setConfig(prev => ({
+                        ...prev,
+                        esiEmployeeRateDisplay: val,
+                        esiEmployeeRate: val === '' ? 0 : parseFloat(val) / 100
+                      }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setConfig(prev => ({
+                      ...prev,
+                      esiEmployeeRateDisplay: undefined,
+                      esiEmployeeRate: val / 100
+                    }));
+                  }}
+                  className="w-24 px-3 py-2 border rounded-lg text-center"
+                  placeholder="0.75"
                 />
                 <span className="text-sm text-blue-600">%</span>
               </div>
               <p className="text-xs text-blue-500 mt-2">
-                Standard: 0.75%
+                E.g. 0.75
               </p>
             </div>
 
@@ -600,17 +617,34 @@ function SalaryOvertimeConfig() {
               </p>
               <div className="flex items-center gap-2">
                 <input
-                  type="number"
-                  step="0.01"
-                  value={(config.esiEmployerRate * 100).toFixed(2)}
-                  onChange={(e) => handleChange("esiEmployerRate", (parseFloat(e.target.value) || 0) / 100)}
-                  className="w-24 px-3 py-2 border rounded-lg"
-                  min="0" max="10"
+                  type="text"
+                  inputMode="decimal"
+                  value={config.esiEmployerRateDisplay ?? (config.esiEmployerRate * 100)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                      setConfig(prev => ({
+                        ...prev,
+                        esiEmployerRateDisplay: val,
+                        esiEmployerRate: val === '' ? 0 : parseFloat(val) / 100
+                      }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setConfig(prev => ({
+                      ...prev,
+                      esiEmployerRateDisplay: undefined,
+                      esiEmployerRate: val / 100
+                    }));
+                  }}
+                  className="w-24 px-3 py-2 border rounded-lg text-center"
+                  placeholder="3.25"
                 />
                 <span className="text-sm text-blue-600">%</span>
               </div>
               <p className="text-xs text-blue-500 mt-2">
-                Standard: 3.25%
+                E.g. 3.25
               </p>
             </div>
 
@@ -625,11 +659,17 @@ function SalaryOvertimeConfig() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-blue-600">₹</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={config.esiWageCeiling}
-                  onChange={(e) => handleChange("esiWageCeiling", parseInt(e.target.value) || 0)}
-                  className="w-32 px-3 py-2 border rounded-lg"
-                  min="0"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]*$/.test(val)) {
+                      handleChange("esiWageCeiling", val === '' ? 0 : parseInt(val));
+                    }
+                  }}
+                  className="w-32 px-3 py-2 border rounded-lg text-center"
+                  placeholder="25000"
                 />
               </div>
               <p className="text-xs text-blue-500 mt-2">
@@ -647,17 +687,36 @@ function SalaryOvertimeConfig() {
               </p>
               <div className="flex items-center gap-2">
                 <input
-                  type="number"
-                  step="0.1"
-                  value={(config.pfEmployeeRate * 100).toFixed(1)}
-                  onChange={(e) => handleChange("pfEmployeeRate", (parseFloat(e.target.value) || 0) / 100)}
-                  className="w-24 px-3 py-2 border rounded-lg"
-                  min="0" max="20"
+                  type="text"
+                  inputMode="decimal"
+                  value={config.pfEmployeeRateDisplay ?? (config.pfEmployeeRate * 100)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Allow typing decimals freely
+                    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                      setConfig(prev => ({
+                        ...prev,
+                        pfEmployeeRateDisplay: val,
+                        pfEmployeeRate: val === '' ? 0 : parseFloat(val) / 100
+                      }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Clean up on blur - remove display field
+                    const val = parseFloat(e.target.value) || 0;
+                    setConfig(prev => ({
+                      ...prev,
+                      pfEmployeeRateDisplay: undefined,
+                      pfEmployeeRate: val / 100
+                    }));
+                  }}
+                  className="w-24 px-3 py-2 border rounded-lg text-center [appearance:textfield]"
+                  placeholder="3.75"
                 />
                 <span className="text-sm text-green-600">%</span>
               </div>
               <p className="text-xs text-green-500 mt-2">
-                Standard: 6% or 12%
+                E.g. 3.75, 6, 12
               </p>
             </div>
 
@@ -671,17 +730,34 @@ function SalaryOvertimeConfig() {
               </p>
               <div className="flex items-center gap-2">
                 <input
-                  type="number"
-                  step="0.1"
-                  value={(config.pfEmployerRate * 100).toFixed(1)}
-                  onChange={(e) => handleChange("pfEmployerRate", (parseFloat(e.target.value) || 0) / 100)}
-                  className="w-24 px-3 py-2 border rounded-lg"
-                  min="0" max="20"
+                  type="text"
+                  inputMode="decimal"
+                  value={config.pfEmployerRateDisplay ?? (config.pfEmployerRate * 100)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                      setConfig(prev => ({
+                        ...prev,
+                        pfEmployerRateDisplay: val,
+                        pfEmployerRate: val === '' ? 0 : parseFloat(val) / 100
+                      }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setConfig(prev => ({
+                      ...prev,
+                      pfEmployerRateDisplay: undefined,
+                      pfEmployerRate: val / 100
+                    }));
+                  }}
+                  className="w-24 px-3 py-2 border rounded-lg text-center [appearance:textfield]"
+                  placeholder="4"
                 />
                 <span className="text-sm text-green-600">%</span>
               </div>
               <p className="text-xs text-green-500 mt-2">
-                Standard: 6% or 12%
+                E.g. 4, 6, 12
               </p>
             </div>
 
@@ -714,16 +790,22 @@ function SalaryOvertimeConfig() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-purple-600">₹</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={config.professionalTaxAmount}
-                  onChange={(e) => handleChange("professionalTaxAmount", parseInt(e.target.value) || 0)}
-                  className="w-32 px-3 py-2 border rounded-lg"
-                  min="0"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]*$/.test(val)) {
+                      handleChange("professionalTaxAmount", val === '' ? 0 : parseInt(val));
+                    }
+                  }}
+                  className="w-24 px-3 py-2 border rounded-lg text-center"
+                  placeholder="200"
                 />
                 <span className="text-sm text-purple-600">/month</span>
               </div>
               <p className="text-xs text-purple-500 mt-2">
-                Varies by state (0 = Not applicable)
+                0 = Not applicable
               </p>
             </div>
           </div>
@@ -755,7 +837,7 @@ function SalaryOvertimeConfig() {
             </div>
             <div className="bg-white/20 p-2 rounded-lg">
               <div className="text-white/80">PF Employee</div>
-              <div className="font-bold">{(config.pfEmployeeRate * 100).toFixed(1)}%</div>
+              <div className="font-bold">{(config.pfEmployeeRate * 100).toFixed(2)}%</div>
             </div>
           </div>
         </div>
