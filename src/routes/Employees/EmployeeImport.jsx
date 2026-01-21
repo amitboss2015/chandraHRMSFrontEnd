@@ -93,12 +93,22 @@ const decodeDeviceToken = (token) => {
   }
 };
 
-// Extract device token from filename pattern: employee_template_[TOKEN].xlsx
+// Extract device token from filename pattern: 
+// New format: [DeviceName]_employee_template_[TOKEN].xlsx
+// Legacy format: employee_template_[TOKEN].xlsx
 const extractDeviceFromFilename = (filename) => {
-  const match = filename.match(/employee_template_([A-Za-z0-9_-]+)\.xlsx$/i);
-  if (match) {
-    return decodeDeviceToken(match[1]);
+  // Try new format first: DeviceName_employee_template_TOKEN.xlsx
+  const newMatch = filename.match(/_employee_template_([A-Za-z0-9_-]+)\.xlsx$/i);
+  if (newMatch) {
+    return decodeDeviceToken(newMatch[1]);
   }
+  
+  // Fallback to legacy format: employee_template_TOKEN.xlsx
+  const legacyMatch = filename.match(/^employee_template_([A-Za-z0-9_-]+)\.xlsx$/i);
+  if (legacyMatch) {
+    return decodeDeviceToken(legacyMatch[1]);
+  }
+  
   return null;
 };
 
@@ -175,9 +185,10 @@ export default function EmployeeImport() {
       
       const blob = await res.blob();
       
-      // Encode device info in filename
+      // Encode device info in filename, starting with device name for clarity
       const deviceToken = encodeDeviceToken(selectedDevice.id, selectedDevice.deviceCode);
-      const filename = `employee_template_${deviceToken}.xlsx`;
+      const deviceName = (selectedDevice.deviceName || selectedDevice.deviceCode).replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `${deviceName}_employee_template_${deviceToken}.xlsx`;
       
       // Create download link
       const downloadUrl = window.URL.createObjectURL(blob);
