@@ -457,14 +457,23 @@ function AttendanceSheet() {
   /** ===================== TAB 2: RECORDS (Employee-wise daily) ===================== */
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [inlineLogs, setInlineLogs] = useState([]);
   const [inlineLoading, setInlineLoading] = useState(false);
   const [inlineError, setInlineError] = useState("");
+  
+  // Filter employees based on search
+  const filteredEmployees = employees.filter(emp => {
+    const searchLower = employeeSearch.toLowerCase();
+    return emp.empCode.toLowerCase().includes(searchLower) || 
+           emp.name.toLowerCase().includes(searchLower);
+  });
 
   // Manual punch update modal state
   const [showPunchModal, setShowPunchModal] = useState(false);
   const [selectedLogForEdit, setSelectedLogForEdit] = useState(null);
-  const [manualPunchData, setManualPunchData] = useState({ manualIn: '', manualOut: '', remarks: '' });
+  const [manualPunchData, setManualPunchData] = useState({ manualIn: '', manualOut: '', remarks: '', statusOverride: '' });
   const [updatingPunch, setUpdatingPunch] = useState(false);
 
   // Load employees list on mount
@@ -486,7 +495,8 @@ function AttendanceSheet() {
     setManualPunchData({
       manualIn: log.manualIn || log.firstIn || '',
       manualOut: log.manualOut || log.lastOut || '',
-      remarks: log.remarks || ''
+      remarks: log.remarks || '',
+      statusOverride: '' // Empty means auto-calculate based on punch times
     });
     setShowPunchModal(true);
   };
@@ -504,6 +514,7 @@ function AttendanceSheet() {
       if (manualPunchData.manualIn) params.append('manualIn', manualPunchData.manualIn);
       if (manualPunchData.manualOut) params.append('manualOut', manualPunchData.manualOut);
       if (manualPunchData.remarks) params.append('remarks', manualPunchData.remarks);
+      if (manualPunchData.statusOverride) params.append('statusOverride', manualPunchData.statusOverride);
       
       const response = await fetch(`${API_BASE}/attendance/day/${selectedLogForEdit.dayId}/manual-punch?${params.toString()}`, {
         method: 'PUT',
@@ -524,6 +535,66 @@ function AttendanceSheet() {
       alert('Failed to update: ' + (e.message || 'Unknown error'));
     } finally {
       setUpdatingPunch(false);
+    }
+  };
+
+  // Handle approving late arrival
+  const handleApproveLate = async (dayId, date) => {
+    if (!dayId) {
+      alert("Cannot approve: Day ID not found");
+      return;
+    }
+    
+    const remarks = prompt("Enter reason for approval (optional):", "Approved by admin");
+    if (remarks === null) return; // User cancelled
+    
+    try {
+      const response = await fetch(`${API_BASE}/attendance/approve-late/${dayId}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': getTenantId(),
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({ remarks, approvedBy: 'Admin' })
+      });
+      
+      if (!response.ok) throw new Error(await response.text());
+      
+      alert(`Late arrival approved for ${date}`);
+      loadInlineLogs(); // Reload to show updated status
+    } catch (e) {
+      alert('Failed to approve: ' + (e.message || 'Unknown error'));
+    }
+  };
+
+  // Handle approving early departure
+  const handleApproveEarlyOut = async (dayId, date) => {
+    if (!dayId) {
+      alert("Cannot approve: Day ID not found");
+      return;
+    }
+    
+    const remarks = prompt("Enter reason for approval (optional):", "Approved by admin");
+    if (remarks === null) return; // User cancelled
+    
+    try {
+      const response = await fetch(`${API_BASE}/attendance/approve-early-out/${dayId}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': getTenantId(),
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({ remarks, approvedBy: 'Admin' })
+      });
+      
+      if (!response.ok) throw new Error(await response.text());
+      
+      alert(`Early departure approved for ${date}`);
+      loadInlineLogs(); // Reload to show updated status
+    } catch (e) {
+      alert('Failed to approve: ' + (e.message || 'Unknown error'));
     }
   };
 
@@ -553,12 +624,27 @@ function AttendanceSheet() {
     const otDays = inlineLogs.filter(l => l.status === 'OT_DAY' || l.isOvertimeDay).length;
     const totalMins = inlineLogs.reduce((sum, l) => sum + (l.workMinutes || 0), 0);
     const dualShifts = inlineLogs.filter(l => l.dualShift).length;
-    // New: Late/Early tracking
-    const lateDays = inlineLogs.filter(l => l.isLateIn).length;
-    const earlyOutDays = inlineLogs.filter(l => l.isEarlyOut).length;
+    // Late/Early tracking
+    const lateDaysCount = inlineLogs.filter(l => l.lateIn).length;
+    const earlyOutDays = inlineLogs.filter(l => l.earlyOut).length;
     const totalLateMins = inlineLogs.reduce((sum, l) => sum + (l.lateByMins || 0), 0);
     const totalEarlyMins = inlineLogs.reduce((sum, l) => sum + (l.earlyByMins || 0), 0);
-    return { present, absent, halfDays, weeklyOff, holidays, otDays, totalMins, dualShifts, lateDays, earlyOutDays, totalLateMins, totalEarlyMins };
+    // OT hours on holidays/weekly offs
+    const totalOtMins = inlineLogs.reduce((sum, l) => sum + (l.overtimeOnHolidayMins || 0), 0);
+    
+    // Calculate late in terms of working days
+    // Shift duration: 9:00 AM to 5:30 PM = 8.5 hours = 510 min, minus 60 min break = 450 min effective
+    // Using 8 hours (480 min) as standard working day for late calculation
+    const workingDayMins = 480; // 8 hours per day
+    const lateInDays = totalLateMins / workingDayMins; // e.g., 480 min late = 1 day
+    const earlyInDays = totalEarlyMins / workingDayMins;
+    
+    return { 
+      present, absent, halfDays, weeklyOff, holidays, otDays, totalMins, dualShifts, 
+      lateDaysCount, earlyOutDays, totalLateMins, totalEarlyMins, totalOtMins,
+      lateInDays: lateInDays.toFixed(2), // Late time equivalent in working days
+      earlyInDays: earlyInDays.toFixed(2)
+    };
   }, [inlineLogs]);
 
   /** ===================== TAB 3: MONTHLY SUMMARY ===================== */
@@ -583,9 +669,10 @@ function AttendanceSheet() {
   // Recalculate attendance state
   const [recalculating, setRecalculating] = useState(false);
   const [recalcResult, setRecalcResult] = useState(null);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const handleRecalculate = async () => {
-    if (!confirm(`This will recalculate attendance for ${MONTH_NAMES[month-1]} ${year}.\n\nThis is useful if you added leaves after attendance was imported.\n\nContinue?`)) {
+    if (!confirm(`This will sync attendance with leave records for ${MONTH_NAMES[month-1]} ${year}.\n\nThis is a lightweight sync that updates ABSENT days to LEAVE if leave exists.\n\nContinue?`)) {
       return;
     }
     
@@ -608,6 +695,39 @@ function AttendanceSheet() {
       alert("Recalculation failed: " + (e.message || "Unknown error"));
     } finally {
       setRecalculating(false);
+    }
+  };
+
+  // Full rebuild - recalculates all attendance from punches with shift rules (late/early/rounding)
+  const handleRebuild = async () => {
+    if (!confirm(`⚠️ FULL REBUILD for ${MONTH_NAMES[month-1]} ${year}\n\nThis will recalculate ALL attendance from punches, applying:\n• Shift assignments\n• Late/Early tracking with rounding\n• Overtime calculations\n\nUse this after assigning shifts or changing shift rules.\n\nContinue?`)) {
+      return;
+    }
+    
+    setRebuilding(true);
+    setRecalcResult(null);
+    try {
+      const resp = await fetch(`${API_BASE}/attendance/import/rebuild?month=${month}&year=${year}`, {
+        method: "POST",
+        headers: { 
+          "X-Tenant-Id": getTenantId(),
+          "Authorization": `Bearer ${getToken()}`
+        },
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      setRecalcResult(data);
+      // Reload data after rebuild
+      await loadSummary();
+      // Also reload the current employee's logs if one is selected
+      if (selectedEmployee) {
+        await loadInlineLogs();
+      }
+      alert("✅ Rebuild complete! Late/early tracking and rounding rules have been applied.\n\nPlease reload employee attendance to see updated data.");
+    } catch (e) {
+      alert("Rebuild failed: " + (e.message || "Unknown error"));
+    } finally {
+      setRebuilding(false);
     }
   };
 
@@ -700,21 +820,40 @@ function AttendanceSheet() {
             </button>
             <button 
               onClick={handleRecalculate}
-              disabled={recalculating}
+              disabled={recalculating || rebuilding}
               className={`px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all ${
-                recalculating 
+                recalculating || rebuilding
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                   : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md hover:shadow-lg'
               }`}
-              title="Recalculate attendance to sync with leave records"
+              title="Sync attendance with leave records"
             >
               {recalculating ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Recalculating...
+                  Syncing...
                 </>
               ) : (
-                <>🔁 Recalculate</>
+                <>📋 Sync Leaves</>
+              )}
+            </button>
+            <button 
+              onClick={handleRebuild}
+              disabled={rebuilding || recalculating}
+              className={`px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all ${
+                rebuilding || recalculating
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md hover:shadow-lg'
+              }`}
+              title="Full rebuild: recalculate all attendance with shift rules (late/early/rounding)"
+            >
+              {rebuilding ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Rebuilding...
+                </>
+              ) : (
+                <>🔧 Full Rebuild</>
               )}
             </button>
             {summaryLoading && <span className="text-sm text-slate-500 flex items-center gap-2">
@@ -826,18 +965,63 @@ function AttendanceSheet() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm font-medium">Select Employee:</label>
-            <select
-              value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              className="border p-2 rounded min-w-[250px]"
-            >
-              <option value="">-- Select Employee --</option>
-              {employees.map(emp => (
-                <option key={emp.empCode} value={emp.empCode}>
-                  {emp.empCode} - {emp.name}
-                </option>
-              ))}
-            </select>
+            {/* Searchable Employee Dropdown */}
+            <div className="relative min-w-[300px]">
+              <input
+                type="text"
+                value={employeeSearch}
+                onChange={(e) => {
+                  setEmployeeSearch(e.target.value);
+                  setShowEmployeeDropdown(true);
+                }}
+                onFocus={() => setShowEmployeeDropdown(true)}
+                placeholder={selectedEmployee ? `${selectedEmployee} - ${employees.find(e => e.empCode === selectedEmployee)?.name || ''}` : "Type to search employee..."}
+                className="border p-2 rounded w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {selectedEmployee && (
+                <button
+                  onClick={() => {
+                    setSelectedEmployee("");
+                    setEmployeeSearch("");
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  title="Clear selection"
+                >
+                  ✕
+                </button>
+              )}
+              {showEmployeeDropdown && (
+                <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-gray-500 text-sm">No employees found</div>
+                  ) : (
+                    filteredEmployees.map(emp => (
+                      <div
+                        key={emp.empCode}
+                        onClick={() => {
+                          setSelectedEmployee(emp.empCode);
+                          setEmployeeSearch("");
+                          setShowEmployeeDropdown(false);
+                        }}
+                        className={`px-3 py-2 cursor-pointer hover:bg-blue-50 text-sm ${
+                          selectedEmployee === emp.empCode ? 'bg-blue-100 font-medium' : ''
+                        }`}
+                      >
+                        <span className="font-medium text-blue-600">{emp.empCode}</span>
+                        <span className="text-gray-600"> - {emp.name}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Close dropdown when clicking outside */}
+            {showEmployeeDropdown && (
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setShowEmployeeDropdown(false)}
+              />
+            )}
             <button 
               onClick={loadInlineLogs} 
               disabled={!selectedEmployee}
@@ -847,6 +1031,25 @@ function AttendanceSheet() {
             >
               Load Attendance
             </button>
+            <button 
+              onClick={handleRebuild}
+              disabled={rebuilding || recalculating}
+              className={`px-4 py-2 rounded font-medium flex items-center gap-2 ${
+                rebuilding || recalculating
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-purple-600 text-white hover:bg-purple-700'
+              }`}
+              title="Rebuild attendance with shift rules (late/early/rounding)"
+            >
+              {rebuilding ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Rebuilding...
+                </>
+              ) : (
+                <>🔧 Rebuild (Apply Shifts)</>
+              )}
+            </button>
           </div>
 
           {inlineLoading && <div className="text-sm text-gray-500">Loading…</div>}
@@ -854,27 +1057,41 @@ function AttendanceSheet() {
 
           {/* Employee Summary Card */}
           {logsSummary && (
-            <div className="bg-gray-50 border rounded p-4">
-              <h4 className="font-semibold mb-2">Summary for {selectedEmployee}</h4>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <span><strong className="text-green-600">{logsSummary.present}</strong> Present</span>
-                <span><strong className="text-red-600">{logsSummary.absent}</strong> Absent</span>
-                <span><strong className="text-yellow-600">{logsSummary.halfDays}</strong> Half Days</span>
-                <span><strong className="text-gray-600">{logsSummary.weeklyOff}</strong> Weekly Off</span>
-                <span><strong className="text-blue-600">{logsSummary.holidays}</strong> Holidays</span>
-                <span className="text-orange-600"><strong>{logsSummary.otDays}</strong> OT Days</span>
-                <span><strong className="text-purple-600">{logsSummary.dualShifts}</strong> Dual Shifts</span>
-                <span><strong>{formatDuration(logsSummary.totalMins)}</strong> Total Work</span>
+            <div className="bg-gradient-to-r from-slate-50 to-gray-50 border rounded-lg p-4 shadow-sm">
+              <h4 className="font-semibold mb-3 text-gray-700">Summary for {selectedEmployee}</h4>
+              {/* Main summary row */}
+              <div className="flex flex-wrap gap-3 text-sm">
+                <span className="bg-green-100 px-3 py-1 rounded-full"><strong className="text-green-700">{logsSummary.present}</strong> <span className="text-green-600">Present</span></span>
+                <span className="bg-red-100 px-3 py-1 rounded-full"><strong className="text-red-700">{logsSummary.absent}</strong> <span className="text-red-600">Absent</span></span>
+                <span className="bg-yellow-100 px-3 py-1 rounded-full"><strong className="text-yellow-700">{logsSummary.halfDays}</strong> <span className="text-yellow-600">Half Days</span></span>
+                <span className="bg-gray-200 px-3 py-1 rounded-full"><strong className="text-gray-700">{logsSummary.weeklyOff}</strong> <span className="text-gray-600">Weekly Off</span></span>
+                <span className="bg-blue-100 px-3 py-1 rounded-full"><strong className="text-blue-700">{logsSummary.holidays}</strong> <span className="text-blue-600">Holidays</span></span>
+                {logsSummary.dualShifts > 0 && (
+                  <span className="bg-purple-100 px-3 py-1 rounded-full"><strong className="text-purple-700">{logsSummary.dualShifts}</strong> <span className="text-purple-600">Dual Shifts</span></span>
+                )}
+              </div>
+              {/* Time tracking row */}
+              <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-gray-200">
+                <span className="bg-emerald-100 px-3 py-1 rounded-full">⏱️ <strong className="text-emerald-700">{formatDuration(logsSummary.totalMins)}</strong> <span className="text-emerald-600">Total Work</span></span>
+                {logsSummary.otDays > 0 && (
+                  <span className="bg-orange-100 px-3 py-1 rounded-full">⏰ <strong className="text-orange-700">{logsSummary.otDays}</strong> <span className="text-orange-600">OT Days</span> ({formatDuration(logsSummary.totalOtMins)})</span>
+                )}
               </div>
               {/* Late/Early summary row */}
-              {(logsSummary.lateDays > 0 || logsSummary.earlyOutDays > 0) && (
-                <div className="flex flex-wrap gap-4 text-sm mt-2 pt-2 border-t border-gray-200">
-                  <span className="text-amber-700">
-                    🕐 <strong>{logsSummary.lateDays}</strong> Late IN ({formatDuration(logsSummary.totalLateMins)} total)
-                  </span>
-                  <span className="text-pink-600">
-                    ⏪ <strong>{logsSummary.earlyOutDays}</strong> Early OUT ({formatDuration(logsSummary.totalEarlyMins)} total)
-                  </span>
+              {(logsSummary.lateDaysCount > 0 || logsSummary.earlyOutDays > 0) && (
+                <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-amber-200 bg-amber-50/50 -mx-4 px-4 py-2 -mb-4 rounded-b-lg">
+                  {logsSummary.lateDaysCount > 0 && (
+                    <span className="bg-amber-200 px-3 py-1 rounded-full text-amber-800">
+                      🕐 <strong>{logsSummary.lateDaysCount}</strong> Days Late 
+                      <span className="ml-1">(<strong>{formatDuration(logsSummary.totalLateMins)}</strong> total)</span>
+                    </span>
+                  )}
+                  {logsSummary.earlyOutDays > 0 && (
+                    <span className="bg-pink-200 px-3 py-1 rounded-full text-pink-800">
+                      ⏪ <strong>{logsSummary.earlyOutDays}</strong> Days Early 
+                      <span className="ml-1">(<strong>{formatDuration(logsSummary.totalEarlyMins)}</strong> total)</span>
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -916,12 +1133,12 @@ function AttendanceSheet() {
                       rowBgClass = 'bg-blue-100 border-l-4 border-l-blue-400';
                     } else if (log.missingPunch) {
                       rowBgClass = 'bg-yellow-100 border-l-4 border-l-yellow-500';
-                    } else if (log.isLateIn && log.isEarlyOut) {
+                    } else if (log.lateIn && log.earlyOut) {
                       // Both late and early - highlight more prominently
                       rowBgClass = 'bg-red-50 border-l-4 border-l-red-400';
-                    } else if (log.isLateIn) {
+                    } else if (log.lateIn) {
                       rowBgClass = 'bg-amber-50 border-l-4 border-l-amber-400';
-                    } else if (log.isEarlyOut) {
+                    } else if (log.earlyOut) {
                       rowBgClass = 'bg-pink-50 border-l-4 border-l-pink-400';
                     } else if (log.dualShift) {
                       rowBgClass = 'bg-purple-100 border-l-4 border-l-purple-500';
@@ -973,25 +1190,67 @@ function AttendanceSheet() {
                              log.status || 'ABSENT'}
                           </span>
                         </td>
-                        {/* Late IN / Early OUT indicator */}
+                        {/* Late IN / Early OUT indicator with actual vs rounded info + Approval */}
                         <td className="border px-3 py-2 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            {log.isLateIn && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                                🕐 Late +{log.lateByMins}m
-                                {log.roundedIn && <span className="text-xs text-gray-500 ml-1">→{log.roundedIn}</span>}
-                              </span>
+                            {log.lateIn && (
+                              <div className="flex flex-col items-center">
+                                {log.lateApproved ? (
+                                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                    ✓ Late Approved
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                      🕐 Late +{log.lateByMins}m
+                                    </span>
+                                    {log.roundedIn && log.firstIn && log.roundedIn !== log.firstIn && (
+                                      <span className="text-[10px] text-gray-500 mt-0.5" title="Actual → Rounded">
+                                        {log.firstIn} → <span className="text-amber-700 font-medium">{log.roundedIn}</span>
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleApproveLate(log.dayId, log.date)}
+                                      className="mt-1 px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
+                                      title="Approve late arrival - won't count in payroll"
+                                    >
+                                      Approve
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             )}
-                            {log.isEarlyOut && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-pink-100 text-pink-800">
-                                ⏪ Early +{log.earlyByMins}m
-                                {log.roundedOut && <span className="text-xs text-gray-500 ml-1">→{log.roundedOut}</span>}
-                              </span>
+                            {log.earlyOut && (
+                              <div className="flex flex-col items-center">
+                                {log.earlyOutApproved ? (
+                                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                    ✓ Early Approved
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-pink-100 text-pink-800">
+                                      ⏪ Early +{log.earlyByMins}m
+                                    </span>
+                                    {log.roundedOut && log.lastOut && log.roundedOut !== log.lastOut && (
+                                      <span className="text-[10px] text-gray-500 mt-0.5" title="Actual → Rounded">
+                                        {log.lastOut} → <span className="text-pink-700 font-medium">{log.roundedOut}</span>
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleApproveEarlyOut(log.dayId, log.date)}
+                                      className="mt-1 px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
+                                      title="Approve early departure - won't count in payroll"
+                                    >
+                                      Approve
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             )}
-                            {!log.isLateIn && !log.isEarlyOut && log.status === 'PRESENT' && (
+                            {!log.lateIn && !log.earlyOut && log.status === 'PRESENT' && (
                               <span className="text-xs text-green-600">✓ On Time</span>
                             )}
-                            {!log.isLateIn && !log.isEarlyOut && log.status !== 'PRESENT' && '-'}
+                            {!log.lateIn && !log.earlyOut && log.status !== 'PRESENT' && '-'}
                           </div>
                         </td>
                         <td className="border px-3 py-2 text-center">
@@ -1670,6 +1929,29 @@ function AttendanceSheet() {
                 />
               </div>
               
+              {/* Status Override - for admin to mark as ABSENT despite punches */}
+              <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                <label className="block text-sm font-medium text-orange-700 mb-1">
+                  ⚠️ Override Status (Admin)
+                </label>
+                <select
+                  value={manualPunchData.statusOverride}
+                  onChange={(e) => setManualPunchData({...manualPunchData, statusOverride: e.target.value})}
+                  className="w-full border border-orange-300 rounded px-3 py-2"
+                >
+                  <option value="">Auto-calculate from punch times</option>
+                  <option value="PRESENT">✓ PRESENT</option>
+                  <option value="ABSENT">✗ ABSENT</option>
+                  <option value="HALF_DAY">½ HALF DAY</option>
+                  <option value="LEAVE">🏖️ LEAVE</option>
+                  <option value="WEEKLY_OFF">📅 WEEKLY OFF</option>
+                  <option value="HOLIDAY">🎉 HOLIDAY</option>
+                </select>
+                <p className="text-xs text-orange-600 mt-1">
+                  Use this to manually set status (e.g., mark as ABSENT when punch seems invalid)
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Remarks (optional)
@@ -1677,7 +1959,7 @@ function AttendanceSheet() {
                 <textarea
                   value={manualPunchData.remarks}
                   onChange={(e) => setManualPunchData({...manualPunchData, remarks: e.target.value})}
-                  placeholder="e.g., Employee forgot to punch out"
+                  placeholder="e.g., Missing OUT punch - employee left early, marked absent"
                   className="w-full border rounded px-3 py-2"
                   rows={2}
                 />

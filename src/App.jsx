@@ -22,6 +22,7 @@ import ShiftList from "./routes/Shifts/ShiftList";
 import ShiftAssign from "./routes/Shifts/ShiftAssign";
 import AttendanceLogs from "./routes/Attendance/AttendanceLogs";
 import AttendanceSheet from "./routes/Attendance/AttendanceSheet";
+import MissingPunchDashboard from "./routes/Attendance/MissingPunchDashboard";
 import PayrollGen from "./routes/Payroll/PayrollGen";
 import Payroll from "./routes/Payroll/payroll";
 import SalarySheets from "./routes/Payroll/SalarySheets";
@@ -35,6 +36,7 @@ import HolidayManagement from "./routes/Settings/HolidayManagement";
 import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
 import DeviceManagement from "./routes/Settings/DeviceManagement";
 import SuperAdminDashboard from "./routes/Admin/SuperAdminDashboard";
+import DataManagement from "./routes/Admin/DataManagement";
 
 // Main Layout Component with responsive sidebar
 function MainLayout({ children }) {
@@ -92,6 +94,7 @@ function App() {
                     <Route path="/leaves/*" element={<LeaveManagement />} />
                     <Route path="/attendance" element={<AttendanceSheet />} />
                     <Route path="/attendance/logs" element={<AttendanceLogs />} />
+                    <Route path="/attendance/missing-punch" element={<MissingPunchDashboard />} />
                    
                     <Route path="/payroll/generate" element={<PayrollGen />} />
                     <Route path="/payroll" element={<Payroll />} />
@@ -103,6 +106,7 @@ function App() {
                     <Route path="/settings/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
                     <Route path="/settings/devices" element={<DeviceManagement />} />
+                    <Route path="/settings/data-management" element={<DataManagement />} />
                     
                     {/* Super Admin Routes */}
                     <Route path="/admin/dashboard" element={<SuperAdminDashboard />} />

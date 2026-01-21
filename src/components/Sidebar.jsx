@@ -14,7 +14,14 @@ const menuItems = [
       { path: "/shifts/assign", label: "Assign Shifts" },
     ]
   },
-  { path: "/attendance", label: "Attendance", icon: "✅" },
+  { 
+    label: "Attendance", 
+    icon: "✅", 
+    children: [
+      { path: "/attendance", label: "Records" },
+      { path: "/attendance/missing-punch", label: "Missing Punch Fix" },
+    ]
+  },
   { path: "/leaves", label: "Leaves", icon: "📝" },
   { path: "/payroll", label: "Payroll", icon: "💰" },
   { path: "/loans", label: "Loans", icon: "💳" },
@@ -26,6 +33,7 @@ const menuItems = [
       { path: "/holidays", label: "Holidays" },
       { path: "/settings/salary-overtime", label: "Salary & OT Rules" },
       { path: "/settings/devices", label: "Biometric Devices" },
+      { path: "/settings/data-management", label: "Data Management" },
     ]
   },
 ];
@@ -45,7 +53,7 @@ function Sidebar({ isOpen, onClose }) {
   };
 
   const isActiveParent = (children) => {
-    return children?.some(child => location.pathname === child.path);
+    return children?.some(child => location.pathname === child.path || location.pathname.startsWith(child.path + '/'));
   };
 
   return (
@@ -121,6 +129,7 @@ function Sidebar({ isOpen, onClose }) {
                           <li key={child.path}>
                             <NavLink
                               to={child.path}
+                              end={true}
                               onClick={onClose}
                               className={({ isActive }) =>
                                 `block px-3 py-2 rounded-lg text-sm transition-all ${
