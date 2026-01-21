@@ -156,9 +156,14 @@ const toApi = (f) => ({
   useEmpCodeAsDeviceCode: f.use_emp_code_as_device_code,
 });
 
-// API calls
+// API calls - with cache busting
 async function apiGet(url) {
-  const res = await fetch(url, { headers: authHeaders() });
+  // Add timestamp to prevent caching
+  const cacheBuster = `_t=${Date.now()}`;
+  const separator = url.includes('?') ? '&' : '?';
+  const res = await fetch(`${url}${separator}${cacheBuster}`, { 
+    headers: { ...authHeaders(), 'Cache-Control': 'no-cache' }
+  });
   if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
   return res.json();
 }
@@ -216,7 +221,7 @@ const empty = {
   tds_applicable: false,
   ot_allowed: false,
   ot_duration: "",
-  weekly_off_days: "SUNDAY",
+  weekly_off_days: "",
   working_days_per_month: 26,
   standard_working_hours: 8,
   emergency_contact_name: "",
@@ -261,21 +266,23 @@ export default function EmployeeUpsert({ mode = "create" }) {
     fetchedOnce.current = true;
 
     if (isEdit) {
-      if (state?.employee) {
-        setForm({ ...empty, ...state.employee });
-        return;
-      }
+      // Always fetch fresh data from API to ensure all fields are up-to-date
+      // Don't use stale state from navigation as it may be missing newly added fields
       if (empCode) {
         setLoading(true);
         getEmployee(empCode)
-          .then((data) => setForm({ ...empty, ...fromApi(data) }))
+          .then((data) => {
+            console.log("API Response for employee:", data);
+            console.log("Increment from API:", data.increment);
+            setForm({ ...empty, ...fromApi(data) });
+          })
           .catch((e) => console.error(e))
           .finally(() => setLoading(false));
       }
     } else {
       setForm(empty);
     }
-  }, [isEdit, empCode, state]);
+  }, [isEdit, empCode]);
 
   // Validation patterns
   const validationRules = {
@@ -649,10 +656,10 @@ export default function EmployeeUpsert({ mode = "create" }) {
                     value={form.weekly_off_days}
                     onChange={(e) => onChange("weekly_off_days", e.target.value)}
                   >
+                    <option value="">None (Use Global Settings)</option>
                     <option value="SUNDAY">Sunday</option>
-                    <option value="SATURDAY,SUNDAY">Saturday & Sunday</option>
                     <option value="SATURDAY">Saturday</option>
-                    <option value="">None</option>
+                    <option value="SATURDAY,SUNDAY">Saturday & Sunday</option>
                   </select>
                 </Field>
                 <Field label="Working Days/Month">
