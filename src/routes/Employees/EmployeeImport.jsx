@@ -117,6 +117,7 @@ export default function EmployeeImport() {
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [detectedDevice, setDetectedDevice] = useState(null);
+  const [overrideDevice, setOverrideDevice] = useState(false); // Allow manual device override
 
   const authHeaders = () => {
     const token = getToken();
@@ -290,8 +291,8 @@ export default function EmployeeImport() {
       const formData = new FormData();
       formData.append("file", file);
       
-      // Send device ID - prioritize detected device from filename, fallback to selected
-      const deviceIdToUse = detectedDevice?.deviceId || selectedDeviceId;
+      // Send device ID - if override is enabled, use selected; otherwise detect from filename
+      const deviceIdToUse = overrideDevice ? selectedDeviceId : (detectedDevice?.deviceId || selectedDeviceId);
       if (deviceIdToUse) {
         formData.append("deviceId", deviceIdToUse);
       }
@@ -327,6 +328,7 @@ export default function EmployeeImport() {
     setResult(null);
     setShowErrors(false);
     setDetectedDevice(null);
+    setOverrideDevice(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -500,6 +502,31 @@ export default function EmployeeImport() {
                     <strong>{devices.find(d => d.id === detectedDevice.deviceId)?.deviceName || detectedDevice.deviceCode}</strong>
                   </>
                 )}
+              </div>
+            )}
+            
+            {/* Device Override Option */}
+            {file && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overrideDevice}
+                    onChange={(e) => setOverrideDevice(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500"
+                  />
+                  <div>
+                    <span className="font-medium text-amber-800">Override device assignment</span>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Check this if you want to import employees to a <strong>different device</strong> than what the template was created for.
+                      {overrideDevice && (
+                        <span className="block mt-2 text-amber-900">
+                          → Employees will be imported to: <strong>{devices.find(d => String(d.id) === selectedDeviceId)?.deviceName || 'Selected device'}</strong>
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </label>
               </div>
             )}
             {/* Drop Zone */}
