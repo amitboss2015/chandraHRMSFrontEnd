@@ -482,6 +482,8 @@ function PayrollGen() {
                   <th className="px-2 py-3 text-center" title="OT Hours (extra hours worked)">OT HRS</th>
                   <th className="px-2 py-3 text-right" title="OT Day Amount">OT DAY AMT</th>
                   <th className="px-2 py-3 text-right" title="OT Hour Amount">OT HR AMT</th>
+                  <th className="px-2 py-3 text-center bg-orange-600 text-white" title="Late Hours">LATE HRS</th>
+                  <th className="px-2 py-3 text-right bg-orange-600 text-white" title="Late Hour Charges (deduction)">LATE CHG</th>
                   <th className="px-2 py-3 text-right bg-green-700">GROSS</th>
                   <th className="px-2 py-3 text-right" title="ESI 0.75% (if salary ≤ ₹21,000)">ESI</th>
                   <th className="px-2 py-3 text-right" title="PF Employee 6%">PF OWN</th>
@@ -516,6 +518,12 @@ function PayrollGen() {
                     <td className="px-2 py-2 text-center">{p.overtimeHours ? parseFloat(p.overtimeHours).toFixed(2) : '0.00'}</td>
                     <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeDayAmount)}</td>
                     <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeHourAmount)}</td>
+                    <td className="px-2 py-2 text-center bg-orange-50 text-orange-700 font-medium">
+                      {p.totalLateHours ? parseFloat(p.totalLateHours).toFixed(2) : '0.00'}
+                    </td>
+                    <td className="px-2 py-2 text-right bg-orange-50 text-orange-700 font-medium">
+                      {formatCurrency(p.lateHourCharges)}
+                    </td>
                     <td className="px-2 py-2 text-right font-bold text-green-700 bg-green-50">
                       {formatCurrency(p.grossSalary)}
                     </td>
@@ -600,6 +608,13 @@ function PayrollGen() {
                   </td>
                   <td className="px-2 py-3 text-right text-indigo-600">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeHourAmount || 0), 0))}
+                  </td>
+                  {/* Late Hours Totals */}
+                  <td className="px-2 py-3 text-center bg-orange-100 text-orange-700">
+                    {payrolls.reduce((s, p) => s + parseFloat(p.totalLateHours || 0), 0).toFixed(2)}
+                  </td>
+                  <td className="px-2 py-3 text-right bg-orange-100 text-orange-700">
+                    {formatCurrency(payrolls.reduce((s, p) => s + (p.lateHourCharges || 0), 0))}
                   </td>
                   <td className="px-2 py-3 text-right text-green-700 bg-green-100">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.grossSalary || 0), 0))}
@@ -700,6 +715,17 @@ function PayrollGen() {
                   <div>
                     <span className="text-sm text-green-600">OT Days/Hours</span>
                     <p className="font-bold">{payrollDetails.attendance?.overtimeDays} / {payrollDetails.attendance?.overtimeHours}h</p>
+                  </div>
+                </div>
+                {/* Late Hours Row */}
+                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-orange-200">
+                  <div className="bg-orange-100 p-3 rounded-lg">
+                    <span className="text-sm text-orange-600">Late Days</span>
+                    <p className="font-bold text-orange-700">{payrollDetails.attendance?.lateDays || 0}</p>
+                  </div>
+                  <div className="bg-orange-100 p-3 rounded-lg">
+                    <span className="text-sm text-orange-600">Total Late Hours</span>
+                    <p className="font-bold text-orange-700">{payrollDetails.attendance?.totalLateHours || 0}h</p>
                   </div>
                 </div>
               </div>
