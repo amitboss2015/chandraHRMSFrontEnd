@@ -1,4 +1,4 @@
-// Dashboard.jsx - Impressive dashboard with charts and critical info
+// Dashboard.jsx - Professional dashboard showing latest attendance month data
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -38,18 +38,27 @@ const fetchApi = async (url) => {
 
 function Dashboard() {
   const [stats, setStats] = useState({
+    monthName: '',
+    month: 0,
+    year: 0,
+    hasAttendanceData: false,
     totalEmployees: 0,
     activeEmployees: 0,
     totalShifts: 0,
-    todayPresent: 0,
-    todayAbsent: 0,
-    todayLate: 0,
-    pendingLeaves: 0,
-    activeLoans: 0,
+    totalPresentDays: 0,
+    totalAbsentDays: 0,
+    totalLateDays: 0,
+    totalHalfDays: 0,
+    totalOtDays: 0,
+    attendanceRate: 0,
+    avgPresentDays: 0,
+    avgAbsentDays: 0,
+    avgLateDays: 0,
+    employeesWithData: 0,
+    totalWorkHours: 0,
     monthlyPayroll: 0,
   });
   const [recentActivity, setRecentActivity] = useState([]);
-  const [attendanceTrend, setAttendanceTrend] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,83 +68,71 @@ function Dashboard() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch all data in parallel
-      const [employees, shifts, attendance, payroll] = await Promise.all([
-        fetchApi(`${API_BASE}/employees`),
-        fetchApi(`${API_BASE}/shifts`),
-        fetchApi(`${API_BASE}/attendance/summary?month=${new Date().getMonth() + 1}&year=${new Date().getFullYear()}`),
-        fetchApi(`${API_BASE}/payroll/summary?year=${new Date().getFullYear()}&month=${new Date().getMonth() + 1}`),
-      ]);
-
-      const activeEmps = Array.isArray(employees) 
-        ? employees.filter(e => e.status === 'ACTIVE').length 
-        : 0;
-
-      // Check if attendance data exists for current month
-      const hasAttendanceData = attendance && Array.isArray(attendance) && attendance.length > 0;
+      // Fetch dashboard stats from new API
+      const dashboardStats = await fetchApi(`${API_BASE}/attendance/dashboard-stats`);
       
-      // Calculate totals from actual attendance data
-      let todayPresent = 0, todayAbsent = 0, todayLate = 0;
-      if (hasAttendanceData) {
-        attendance.forEach(emp => {
-          todayPresent += emp.presentDays || 0;
-          todayAbsent += emp.absentDays || 0;
-          todayLate += emp.lateDays || 0;
+      if (dashboardStats) {
+        // Fetch payroll for the same month
+        const payroll = await fetchApi(
+          `${API_BASE}/payroll/summary?year=${dashboardStats.year}&month=${dashboardStats.month}`
+        );
+
+        setStats({
+          ...dashboardStats,
+          monthlyPayroll: payroll?.totalNetSalary || 0,
         });
-        // These are monthly totals, for "today" we need to approximate
-        const daysInMonth = new Date().getDate();
-        todayPresent = Math.round(todayPresent / daysInMonth);
-        todayAbsent = Math.round(todayAbsent / daysInMonth);
-        todayLate = Math.round(todayLate / daysInMonth);
-      }
 
-      setStats({
-        totalEmployees: Array.isArray(employees) ? employees.length : 0,
-        activeEmployees: activeEmps,
-        totalShifts: Array.isArray(shifts) ? shifts.length : 0,
-        todayPresent: todayPresent,
-        todayAbsent: todayAbsent,
-        todayLate: todayLate,
-        pendingLeaves: 0,
-        activeLoans: 0,
-        monthlyPayroll: payroll?.totalNetSalary || 0,
-        hasAttendanceData: hasAttendanceData,
-      });
-
-      // Generate attendance trend for last 7 days (show zeros if no data)
-      const trend = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dayName = date.toLocaleDateString('en', { weekday: 'short' });
-        const isSunday = date.getDay() === 0;
-        trend.push({
-          day: dayName,
-          date: date.getDate(),
-          present: 0, // Will be 0 if no attendance data
-          absent: 0,
-          late: 0,
-          isWeekend: isSunday,
-        });
+        // Build recent activity based on status
+        const activities = [];
+        if (!dashboardStats.hasAttendanceData) {
+          activities.push({ 
+            type: 'warning', 
+            text: 'No attendance data uploaded', 
+            time: 'Import attendance to see data', 
+            icon: '📋' 
+          });
+        } else {
+          activities.push({ 
+            type: 'success', 
+            text: `${dashboardStats.monthName} data loaded`, 
+            time: `${dashboardStats.employeesWithData} employees`, 
+            icon: '✅' 
+          });
+        }
+        if (dashboardStats.activeEmployees === 0) {
+          activities.push({ 
+            type: 'info', 
+            text: 'No employees added yet', 
+            time: 'Add employees to get started', 
+            icon: '👥' 
+          });
+        }
+        if (dashboardStats.totalShifts === 0) {
+          activities.push({ 
+            type: 'info', 
+            text: 'No shifts configured', 
+            time: 'Configure shifts first', 
+            icon: '🕐' 
+          });
+        }
+        if (dashboardStats.totalLateDays > 10) {
+          activities.push({ 
+            type: 'warning', 
+            text: `${dashboardStats.totalLateDays} late days recorded`, 
+            time: 'Review attendance', 
+            icon: '⏰' 
+          });
+        }
+        if (activities.length === 0) {
+          activities.push({ 
+            type: 'success', 
+            text: 'System is ready', 
+            time: 'All configurations done', 
+            icon: '✅' 
+          });
+        }
+        setRecentActivity(activities);
       }
-      setAttendanceTrend(trend);
-
-      // Recent activity - show actual status
-      const activities = [];
-      if (!hasAttendanceData) {
-        activities.push({ type: 'info', text: 'No attendance data for this month', time: 'Import attendance to see data', icon: '📋' });
-      }
-      if (activeEmps === 0) {
-        activities.push({ type: 'info', text: 'No employees added yet', time: 'Add employees to get started', icon: '👥' });
-      }
-      if (Array.isArray(shifts) && shifts.length === 0) {
-        activities.push({ type: 'info', text: 'No shifts configured', time: 'Configure shifts first', icon: '🕐' });
-      }
-      if (activities.length === 0) {
-        activities.push({ type: 'success', text: 'System is ready', time: 'All configurations done', icon: '✅' });
-      }
-      setRecentActivity(activities);
-
     } catch (e) {
       console.error('Dashboard load error:', e);
     } finally {
@@ -178,6 +175,29 @@ function Dashboard() {
         <p className="text-slate-500 mt-1">{currentDate}</p>
       </div>
 
+      {/* Month Banner */}
+      <div className="mb-6 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-4 md:p-6 text-white shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-emerald-100 text-sm font-medium">Showing Data For</p>
+            <h2 className="text-2xl md:text-3xl font-bold mt-1">
+              {stats.hasAttendanceData ? stats.monthName : 'No Data Available'}
+            </h2>
+            {stats.hasAttendanceData && (
+              <p className="text-emerald-100 mt-2">
+                {stats.employeesWithData} employees • {stats.totalWorkHours} total work hours
+              </p>
+            )}
+          </div>
+          <div className="hidden md:flex items-center gap-4">
+            <div className="text-center bg-white/20 rounded-xl px-6 py-3 backdrop-blur-sm">
+              <p className="text-3xl font-bold">{stats.attendanceRate}%</p>
+              <p className="text-sm text-emerald-100">Attendance Rate</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
@@ -188,23 +208,29 @@ function Dashboard() {
           color="blue"
         />
         <StatCard
-          title="Present Today"
-          value={stats.todayPresent}
+          title="Present Days"
+          value={stats.totalPresentDays}
           subtitle={stats.hasAttendanceData 
-            ? `${Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}% attendance`
-            : 'No data for this month'}
+            ? `Avg ${stats.avgPresentDays} per employee`
+            : 'No data'}
           icon="✅"
           color="green"
         />
         <StatCard
-          title="Absent Today"
-          value={stats.todayAbsent}
+          title="Absent Days"
+          value={stats.totalAbsentDays}
+          subtitle={stats.hasAttendanceData 
+            ? `Avg ${stats.avgAbsentDays} per employee`
+            : 'No data'}
           icon="❌"
           color="red"
         />
         <StatCard
-          title="Late Today"
-          value={stats.todayLate}
+          title="Late Days"
+          value={stats.totalLateDays}
+          subtitle={stats.hasAttendanceData 
+            ? `Avg ${stats.avgLateDays} per employee`
+            : 'No data'}
           icon="⏰"
           color="amber"
         />
@@ -212,72 +238,128 @@ function Dashboard() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Attendance Chart */}
+        {/* Monthly Overview */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border p-4 md:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-800">📈 Weekly Attendance</h2>
-            <span className="text-sm text-slate-500">Last 7 days</span>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-slate-800">📊 Monthly Overview</h2>
+            <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              {stats.monthName || 'N/A'}
+            </span>
           </div>
-          <div className="h-48 md:h-64">
-            <SimpleBarChart data={attendanceTrend} maxValue={stats.activeEmployees} />
-          </div>
-          <div className="flex justify-center gap-6 mt-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-              <span className="text-slate-600">Present</span>
+          
+          {stats.hasAttendanceData ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <OverviewCard 
+                label="Present Days" 
+                value={stats.totalPresentDays} 
+                icon="✅"
+                color="emerald"
+              />
+              <OverviewCard 
+                label="Absent Days" 
+                value={stats.totalAbsentDays} 
+                icon="❌"
+                color="red"
+              />
+              <OverviewCard 
+                label="Late Days" 
+                value={stats.totalLateDays} 
+                icon="⏰"
+                color="amber"
+              />
+              <OverviewCard 
+                label="Half Days" 
+                value={stats.totalHalfDays} 
+                icon="⚡"
+                color="purple"
+              />
+              <OverviewCard 
+                label="OT Days" 
+                value={stats.totalOtDays} 
+                icon="💪"
+                color="blue"
+              />
+              <OverviewCard 
+                label="Work Hours" 
+                value={stats.totalWorkHours} 
+                icon="⏱️"
+                color="teal"
+              />
+              <OverviewCard 
+                label="Employees" 
+                value={stats.employeesWithData} 
+                icon="👥"
+                color="indigo"
+              />
+              <OverviewCard 
+                label="Attendance %" 
+                value={`${stats.attendanceRate}%`} 
+                icon="📈"
+                color="green"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-400"></div>
-              <span className="text-slate-600">Absent</span>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                <span className="text-4xl">📋</span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-700 mb-2">No Attendance Data</h3>
+              <p className="text-slate-500 mb-4">Import attendance data to see monthly statistics</p>
+              <Link 
+                to="/attendance"
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                Import Attendance
+              </Link>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-amber-400"></div>
-              <span className="text-slate-600">Late</span>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Today's Summary */}
+        {/* Monthly Summary */}
         <div className="bg-white rounded-2xl shadow-sm border p-4 md:p-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">📊 Today's Summary</h2>
-          <div className="space-y-4">
-            <SummaryRow 
-              label="Present" 
-              value={stats.todayPresent} 
-              total={stats.activeEmployees}
-              color="emerald"
-            />
-            <SummaryRow 
-              label="Absent" 
-              value={stats.todayAbsent} 
-              total={stats.activeEmployees}
-              color="red"
-            />
-            <SummaryRow 
-              label="Late" 
-              value={stats.todayLate} 
-              total={stats.activeEmployees}
-              color="amber"
-            />
-          </div>
+          <h2 className="text-lg font-semibold text-slate-800 mb-4">
+            📅 {stats.monthName || 'Month'} Summary
+          </h2>
+          
+          {stats.hasAttendanceData ? (
+            <>
+              <div className="space-y-4">
+                <SummaryRow 
+                  label="Present Days" 
+                  value={stats.totalPresentDays} 
+                  total={stats.totalPresentDays + stats.totalAbsentDays}
+                  color="emerald"
+                />
+                <SummaryRow 
+                  label="Absent Days" 
+                  value={stats.totalAbsentDays} 
+                  total={stats.totalPresentDays + stats.totalAbsentDays}
+                  color="red"
+                />
+                <SummaryRow 
+                  label="Late Days" 
+                  value={stats.totalLateDays} 
+                  total={stats.totalPresentDays}
+                  color="amber"
+                />
+              </div>
 
-          <div className="mt-6 pt-4 border-t">
-            <div className="text-center">
-              {stats.hasAttendanceData ? (
-                <>
+              <div className="mt-6 pt-4 border-t">
+                <div className="text-center">
                   <div className="text-4xl font-bold text-emerald-600">
-                    {Math.round((stats.todayPresent / stats.activeEmployees) * 100) || 0}%
+                    {stats.attendanceRate}%
                   </div>
-                  <div className="text-sm text-slate-500 mt-1">Attendance Rate</div>
-                </>
-              ) : (
-                <>
-                  <div className="text-2xl font-bold text-slate-400">--</div>
-                  <div className="text-sm text-slate-500 mt-1">No attendance data for {new Date().toLocaleString('en', { month: 'long', year: 'numeric' })}</div>
-                </>
-              )}
+                  <div className="text-sm text-slate-500 mt-1">Overall Attendance Rate</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="text-5xl mb-4">📭</div>
+              <p className="text-slate-500">No data available</p>
+              <p className="text-xs text-slate-400 mt-1">Upload attendance to see summary</p>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -298,11 +380,13 @@ function Dashboard() {
 
         {/* Monthly Stats */}
         <div className="bg-white rounded-2xl shadow-sm border p-4 md:p-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">📅 This Month</h2>
+          <h2 className="text-lg font-semibold text-slate-800 mb-4">
+            📅 {stats.monthName || 'This Month'}
+          </h2>
           <div className="space-y-3">
             <MonthStat icon="👥" label="Active Employees" value={stats.activeEmployees} />
             <MonthStat icon="🕐" label="Working Shifts" value={stats.totalShifts} />
-            <MonthStat icon="📝" label="Pending Leaves" value={stats.pendingLeaves} badge />
+            <MonthStat icon="⏰" label="Late Days" value={stats.totalLateDays} badge />
             <MonthStat 
               icon="💰" 
               label="Payroll Amount" 
@@ -314,13 +398,16 @@ function Dashboard() {
 
         {/* Recent Activity */}
         <div className="bg-white rounded-2xl shadow-sm border p-4 md:p-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">🔔 Recent Activity</h2>
+          <h2 className="text-lg font-semibold text-slate-800 mb-4">🔔 Status</h2>
           <div className="space-y-3">
             {recentActivity.map((activity, i) => (
-              <div key={i} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+              <div key={i} className={`flex items-start gap-3 p-3 rounded-lg transition-colors ${
+                activity.type === 'warning' ? 'bg-amber-50' : 
+                activity.type === 'success' ? 'bg-emerald-50' : 'bg-slate-50'
+              }`}>
                 <span className="text-xl">{activity.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-700 truncate">{activity.text}</p>
+                  <p className="text-sm text-slate-700 font-medium">{activity.text}</p>
                   <p className="text-xs text-slate-400">{activity.time}</p>
                 </div>
               </div>
@@ -371,38 +458,26 @@ function StatCard({ title, value, subtitle, icon, color }) {
   );
 }
 
-// Simple Bar Chart Component (CSS-only, no library needed)
-function SimpleBarChart({ data, maxValue }) {
+// Overview Card Component
+function OverviewCard({ label, value, icon, color }) {
+  const colors = {
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    purple: 'bg-purple-50 text-purple-700 border-purple-200',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    teal: 'bg-teal-50 text-teal-700 border-teal-200',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    green: 'bg-green-50 text-green-700 border-green-200',
+  };
+
   return (
-    <div className="flex items-end justify-between h-full gap-2 px-2">
-      {data.map((item, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center">
-          <div className="w-full flex flex-col items-center justify-end h-40 md:h-52 gap-0.5">
-            {!item.isWeekend ? (
-              <>
-                <div 
-                  className="w-full max-w-8 bg-amber-400 rounded-t transition-all duration-500"
-                  style={{ height: `${(item.late / maxValue) * 100}%`, minHeight: item.late ? '4px' : '0' }}
-                ></div>
-                <div 
-                  className="w-full max-w-8 bg-red-400 transition-all duration-500"
-                  style={{ height: `${(item.absent / maxValue) * 100}%`, minHeight: item.absent ? '4px' : '0' }}
-                ></div>
-                <div 
-                  className="w-full max-w-8 bg-emerald-500 rounded-b transition-all duration-500"
-                  style={{ height: `${(item.present / maxValue) * 100}%`, minHeight: item.present ? '8px' : '0' }}
-                ></div>
-              </>
-            ) : (
-              <div className="w-full max-w-8 h-2 bg-slate-200 rounded"></div>
-            )}
-          </div>
-          <div className="mt-2 text-center">
-            <div className="text-xs font-medium text-slate-600">{item.day}</div>
-            <div className="text-xs text-slate-400">{item.date}</div>
-          </div>
-        </div>
-      ))}
+    <div className={`p-4 rounded-xl border ${colors[color]} transition-transform hover:scale-105`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-lg">{icon}</span>
+        <span className="text-xs font-medium uppercase tracking-wide opacity-80">{label}</span>
+      </div>
+      <p className="text-2xl font-bold">{value}</p>
     </div>
   );
 }
@@ -425,14 +500,14 @@ function SummaryRow({ label, value, total, color }) {
       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
         <div 
           className={`h-full ${colors[color]} rounded-full transition-all duration-500`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
       </div>
     </div>
   );
 }
 
-// Quick Action Button - Using Link instead of <a> to prevent full page reload
+// Quick Action Button
 function QuickAction({ href, icon, label, color }) {
   const colors = {
     blue: 'hover:bg-blue-50 hover:border-blue-200',
