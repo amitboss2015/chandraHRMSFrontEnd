@@ -386,6 +386,41 @@ function Dashboard() {
             )}
           </div>
 
+          {/* Multi-Device Employees (Suspicious Activity) */}
+          {stats.multiDeviceEmployees?.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border p-5 border-l-4 border-l-orange-400">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                ⚠️ Multi-Device Punches
+                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                  Review Required
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mb-3">
+                Employees punching at multiple biometric devices
+              </p>
+              <div className="space-y-2">
+                {stats.multiDeviceEmployees.map((emp, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-orange-50">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-slate-800">{emp.name}</span>
+                      <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full">
+                        {emp.deviceCount} devices
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">ID: {emp.empCode}</p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {emp.devices?.map((device, j) => (
+                        <span key={j} className="text-xs bg-white text-slate-600 px-2 py-0.5 rounded border">
+                          {device}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Quick Actions */}
           <div className="bg-white rounded-2xl shadow-sm border p-5">
             <h3 className="text-lg font-semibold text-slate-800 mb-4">⚡ Quick Actions</h3>
