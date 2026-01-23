@@ -1470,7 +1470,7 @@ function AttendanceSheet() {
           {/* Step 1: Upload */}
           {importStep === 'upload' && !existingBatchForMonth && (
             <>
-              {/* Download Sample Template - STATIC Excel files with REAL attendance data */}
+              {/* Download Sample Template - STATIC Excel file with REAL attendance data */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-sm border-2 border-blue-200 p-6">
                 <h3 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📋</span>
@@ -1480,24 +1480,15 @@ function AttendanceSheet() {
                   Download a <strong>sample template</strong> with real attendance data format from biometric machine.
                   Use this format to prepare your attendance file.
                 </p>
-                <div className="flex flex-wrap gap-3">
-                  <a 
-                    href={`${API_BASE}/attendance/template/sample?type=ladies`}
-                    download="attendance_sample_ladies.xlsx"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md hover:shadow-lg"
-                  >
-                    👩 Ladies Sample (Excel)
-                  </a>
-                  <a 
-                    href={`${API_BASE}/attendance/template/sample?type=gents`}
-                    download="attendance_sample_gents.xlsx"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
-                  >
-                    👨 Gents Sample (Excel)
-                  </a>
-                </div>
+                <a 
+                  href={`${API_BASE}/attendance/template/sample`}
+                  download="attendance_sample_template.xlsx"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
+                >
+                  📥 Download Sample Template (Excel)
+                </a>
                 <p className="text-xs text-blue-600 mt-3">
-                  💡 These samples show the exact format from real biometric machine exports (60+ employees each).
+                  💡 This sample shows the exact format from a real biometric machine export.
                 </p>
               </div>
 
