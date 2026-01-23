@@ -26,7 +26,7 @@ const regularMenuItems = [
   { path: "/leaves", label: "Leaves", icon: "📝" },
   { path: "/payroll", label: "Payroll", icon: "💰" },
   { path: "/loans", label: "Loans", icon: "💳" },
-  { path: "/reports", label: "Reports", icon: "📈" },
+  // { path: "/reports", label: "Reports", icon: "📈" },  // HIDDEN - Coming Soon
   { 
     label: "Settings", 
     icon: "⚙️", 
@@ -34,7 +34,7 @@ const regularMenuItems = [
       { path: "/holidays", label: "Holidays" },
       { path: "/settings/salary-overtime", label: "Salary & OT Rules" },
       { path: "/settings/devices", label: "Biometric Devices" },
-      { path: "/settings/data-management", label: "Data Management" },
+      // { path: "/settings/data-management", label: "Data Management" },  // HIDDEN - Coming Soon
     ]
   },
 ];

@@ -41,7 +41,7 @@ import Payroll from "./routes/Payroll/payroll";
 import SalarySheets from "./routes/Payroll/SalarySheets";
 import Payslip from "./routes/Payroll/Payslip";
 import Loans from "./routes/Loans/Loans.jsx";
-import Reports from "./routes/Reports/Reports";
+// import Reports from "./routes/Reports/Reports";  // HIDDEN - Coming Soon
 import LeaveTypes from "./routes/Leaves/LeaveTypes";
 import MarkLeave from "./routes/Leaves/MarkLeave";
 import LeaveManagement from "./routes/Leaves/LeaveManagement";
@@ -49,7 +49,7 @@ import HolidayManagement from "./routes/Settings/HolidayManagement";
 import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
 import DeviceManagement from "./routes/Settings/DeviceManagement";
 import SuperAdminDashboard from "./routes/Admin/SuperAdminDashboard";
-import DataManagement from "./routes/Admin/DataManagement";
+// import DataManagement from "./routes/Admin/DataManagement";  // HIDDEN - Coming Soon
 
 // Main Layout Component with responsive sidebar
 function MainLayout({ children }) {
@@ -115,12 +115,14 @@ function App() {
                     <Route path="/payroll/sheets" element={<SalarySheets />} />
 
                     <Route path="/loans" element={<Loans />} />
-                    <Route path="/reports/*" element={<Reports />} />
+                    {/* HIDDEN - Coming Soon */}
+                    {/* <Route path="/reports/*" element={<Reports />} /> */}
                     <Route path="/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
                     <Route path="/settings/devices" element={<DeviceManagement />} />
-                    <Route path="/settings/data-management" element={<DataManagement />} />
+                    {/* HIDDEN - Coming Soon */}
+                    {/* <Route path="/settings/data-management" element={<DataManagement />} /> */}
                     
                     {/* Super Admin Routes */}
                     <Route path="/admin/dashboard" element={<SuperAdminDashboard />} />
