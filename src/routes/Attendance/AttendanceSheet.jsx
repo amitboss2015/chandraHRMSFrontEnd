@@ -1470,7 +1470,7 @@ function AttendanceSheet() {
           {/* Step 1: Upload */}
           {importStep === 'upload' && !existingBatchForMonth && (
             <>
-              {/* Download Sample Template - STATIC file with REAL attendance data */}
+              {/* Download Sample Template - STATIC Excel files with REAL attendance data */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-sm border-2 border-blue-200 p-6">
                 <h3 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📋</span>
@@ -1482,22 +1482,22 @@ function AttendanceSheet() {
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <a 
-                    href={`${API_BASE}/attendance/template/sample?format=xlsx`}
-                    download="attendance_sample_template.xlsx"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
+                    href={`${API_BASE}/attendance/template/sample?type=ladies`}
+                    download="attendance_sample_ladies.xlsx"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md hover:shadow-lg"
                   >
-                    📥 Download Sample (Excel)
+                    👩 Ladies Sample (Excel)
                   </a>
                   <a 
-                    href={`${API_BASE}/attendance/template/sample?format=csv`}
-                    download="attendance_sample_template.csv"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-white border-2 border-blue-400 text-blue-700 hover:bg-blue-50"
+                    href={`${API_BASE}/attendance/template/sample?type=gents`}
+                    download="attendance_sample_gents.xlsx"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
                   >
-                    📄 Download Sample (CSV)
+                    👨 Gents Sample (Excel)
                   </a>
                 </div>
                 <p className="text-xs text-blue-600 mt-3">
-                  💡 This sample shows the exact format from a real biometric machine export (60+ employees).
+                  💡 These samples show the exact format from real biometric machine exports (60+ employees each).
                 </p>
               </div>
 
