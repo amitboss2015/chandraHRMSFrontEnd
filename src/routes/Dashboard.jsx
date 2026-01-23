@@ -18,9 +18,9 @@ const getToken = () =>
 const getTenantId = () =>
   localStorage.getItem('hrms_tenant_id') || 'SASA001';
 
-// Cache key for dashboard data
-const DASHBOARD_CACHE_KEY = 'hrms_dashboard_cache';
-const DASHBOARD_CACHE_EXPIRY = 'hrms_dashboard_cache_expiry';
+// Cache key for dashboard data - TENANT SPECIFIC
+const getDashboardCacheKey = () => `hrms_dashboard_cache_${getTenantId()}`;
+const getDashboardCacheExpiryKey = () => `hrms_dashboard_cache_expiry_${getTenantId()}`;
 
 const fetchApi = async (url) => {
   try {
@@ -38,10 +38,12 @@ const fetchApi = async (url) => {
   }
 };
 
-// Cache management
+// Cache management - TENANT SPECIFIC
 const getCachedData = () => {
-  const cached = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
-  const expiry = sessionStorage.getItem(DASHBOARD_CACHE_EXPIRY);
+  const cacheKey = getDashboardCacheKey();
+  const expiryKey = getDashboardCacheExpiryKey();
+  const cached = sessionStorage.getItem(cacheKey);
+  const expiry = sessionStorage.getItem(expiryKey);
   if (cached && expiry && Date.now() < parseInt(expiry)) {
     return JSON.parse(cached);
   }
@@ -49,9 +51,11 @@ const getCachedData = () => {
 };
 
 const setCachedData = (data) => {
-  sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+  const cacheKey = getDashboardCacheKey();
+  const expiryKey = getDashboardCacheExpiryKey();
+  sessionStorage.setItem(cacheKey, JSON.stringify(data));
   // Cache for 30 minutes (until logout clears session storage)
-  sessionStorage.setItem(DASHBOARD_CACHE_EXPIRY, (Date.now() + 30 * 60 * 1000).toString());
+  sessionStorage.setItem(expiryKey, (Date.now() + 30 * 60 * 1000).toString());
 };
 
 function Dashboard() {

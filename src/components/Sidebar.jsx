@@ -3,7 +3,8 @@ import React, { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-const menuItems = [
+// Regular user menu items (for ADMIN, HR_MANAGER, etc.)
+const regularMenuItems = [
   { path: "/", label: "Dashboard", icon: "📊" },
   { path: "/employees", label: "Employees", icon: "👥" },
   { 
@@ -38,9 +39,14 @@ const menuItems = [
   },
 ];
 
-// Super Admin only menu items
+// Super Admin ONLY menu items (no employee/attendance/payroll access)
 const superAdminMenuItems = [
-  { path: "/admin/dashboard", label: "Admin Dashboard", icon: "🛡️" },
+  { path: "/admin/dashboard", label: "Dashboard", icon: "📊" },
+  { path: "/admin/companies", label: "Companies", icon: "🏢" },
+  { path: "/admin/trials", label: "Trials & Subscriptions", icon: "⏱️" },
+  { path: "/admin/devices", label: "All Devices", icon: "📱" },
+  { path: "/admin/fraud", label: "Fraud Detection", icon: "🚨" },
+  { path: "/admin/maintenance", label: "System Maintenance", icon: "🔧" },
 ];
 
 function Sidebar({ isOpen, onClose }) {
@@ -105,71 +111,11 @@ function Sidebar({ isOpen, onClose }) {
         {/* Navigation */}
         <nav className="flex-1 overflow-auto p-3">
           <ul className="space-y-1">
-            {menuItems.map((item) => (
-              <li key={item.label}>
-                {item.children ? (
-                  <div>
-                    <button
-                      onClick={() => toggleMenu(item.label)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-left transition-all
-                        ${isActiveParent(item.children) 
-                          ? 'bg-emerald-500/20 text-emerald-400' 
-                          : 'hover:bg-white/5 text-slate-300'
-                        }`}
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="flex-1 text-sm font-medium">{item.label}</span>
-                      <span className={`text-xs transition-transform ${expandedMenus[item.label] || isActiveParent(item.children) ? 'rotate-90' : ''}`}>
-                        ▶
-                      </span>
-                    </button>
-                    {(expandedMenus[item.label] || isActiveParent(item.children)) && (
-                      <ul className="mt-1 ml-6 pl-4 border-l border-white/10 space-y-1">
-                        {item.children.map(child => (
-                          <li key={child.path}>
-                            <NavLink
-                              to={child.path}
-                              end={true}
-                              onClick={onClose}
-                              className={({ isActive }) =>
-                                `block px-3 py-2 rounded-lg text-sm transition-all ${
-                                  isActive 
-                                    ? 'bg-emerald-500 text-white font-medium' 
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`
-                              }
-                            >
-                              {child.label}
-                            </NavLink>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ) : (
-                  <NavLink
-                    to={item.path}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
-                        isActive 
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25' 
-                          : 'hover:bg-white/5 text-slate-300'
-                      }`
-                    }
-                  >
-                    <span className="text-lg">{item.icon}</span>
-                    <span className="text-sm font-medium">{item.label}</span>
-                  </NavLink>
-                )}
-              </li>
-            ))}
-            
-            {/* Super Admin Menu - Only for SUPER_ADMIN role */}
-            {user?.role === 'SUPER_ADMIN' && (
+            {/* SUPER_ADMIN gets admin-only menu */}
+            {user?.role === 'SUPER_ADMIN' ? (
               <>
-                <li className="pt-4 mt-4 border-t border-white/10">
-                  <p className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase">Super Admin</p>
+                <li className="pb-2 mb-2 border-b border-white/10">
+                  <p className="px-4 py-2 text-xs font-semibold text-purple-400 uppercase">Super Admin Console</p>
                 </li>
                 {superAdminMenuItems.map((item) => (
                   <li key={item.path}>
@@ -190,6 +136,67 @@ function Sidebar({ isOpen, onClose }) {
                   </li>
                 ))}
               </>
+            ) : (
+              /* Regular users get standard menu */
+              regularMenuItems.map((item) => (
+                <li key={item.label}>
+                  {item.children ? (
+                    <div>
+                      <button
+                        onClick={() => toggleMenu(item.label)}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-left transition-all
+                          ${isActiveParent(item.children) 
+                            ? 'bg-emerald-500/20 text-emerald-400' 
+                            : 'hover:bg-white/5 text-slate-300'
+                          }`}
+                      >
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="flex-1 text-sm font-medium">{item.label}</span>
+                        <span className={`text-xs transition-transform ${expandedMenus[item.label] || isActiveParent(item.children) ? 'rotate-90' : ''}`}>
+                          ▶
+                        </span>
+                      </button>
+                      {(expandedMenus[item.label] || isActiveParent(item.children)) && (
+                        <ul className="mt-1 ml-6 pl-4 border-l border-white/10 space-y-1">
+                          {item.children.map(child => (
+                            <li key={child.path}>
+                              <NavLink
+                                to={child.path}
+                                end={true}
+                                onClick={onClose}
+                                className={({ isActive }) =>
+                                  `block px-3 py-2 rounded-lg text-sm transition-all ${
+                                    isActive 
+                                      ? 'bg-emerald-500 text-white font-medium' 
+                                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                  }`
+                                }
+                              >
+                                {child.label}
+                              </NavLink>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : (
+                    <NavLink
+                      to={item.path}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                          isActive 
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25' 
+                            : 'hover:bg-white/5 text-slate-300'
+                        }`
+                      }
+                    >
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </NavLink>
+                  )}
+                </li>
+              ))
             )}
           </ul>
         </nav>

@@ -1470,14 +1470,45 @@ function AttendanceSheet() {
           {/* Step 1: Upload */}
           {importStep === 'upload' && !existingBatchForMonth && (
             <>
-              {/* Download Template - Requires device selection */}
+              {/* Download Sample Template - STATIC file with REAL attendance data */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-sm border-2 border-blue-200 p-6">
+                <h3 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+                  <span className="text-2xl">📋</span>
+                  Step 1: Download Sample Template
+                </h3>
+                <p className="text-blue-700 text-sm mb-4">
+                  Download a <strong>sample template</strong> with real attendance data format from biometric machine.
+                  Use this format to prepare your attendance file.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <a 
+                    href={`${API_BASE}/attendance/template/sample?format=xlsx`}
+                    download="attendance_sample_template.xlsx"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
+                  >
+                    📥 Download Sample (Excel)
+                  </a>
+                  <a 
+                    href={`${API_BASE}/attendance/template/sample?format=csv`}
+                    download="attendance_sample_template.csv"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-white border-2 border-blue-400 text-blue-700 hover:bg-blue-50"
+                  >
+                    📄 Download Sample (CSV)
+                  </a>
+                </div>
+                <p className="text-xs text-blue-600 mt-3">
+                  💡 This sample shows the exact format from a real biometric machine export (60+ employees).
+                </p>
+              </div>
+
+              {/* OR - Download Empty Template for Your Employees */}
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <span className="text-2xl">📥</span>
-                  Step 1: Download Template
+                  <span className="text-2xl">📝</span>
+                  OR: Download Empty Template (Your Employees)
                 </h3>
                 <p className="text-slate-600 text-sm mb-4">
-                  Download an attendance template for <strong>{MONTH_NAMES[month-1]} {year}</strong> 
+                  Download an empty template for <strong>{MONTH_NAMES[month-1]} {year}</strong> pre-filled with your employee list.
                   {selectedDeviceId && selectedDeviceCode && (
                     <span className="text-emerald-700 font-medium"> for device: {selectedDeviceCode}</span>
                   )}
@@ -1499,12 +1530,12 @@ function AttendanceSheet() {
                   ) : !selectedDeviceId ? (
                     <>🔒 Select Device First</>
                   ) : (
-                    <>📥 Download Template for {selectedDeviceCode}</>
+                    <>📝 Download Empty Template for {selectedDeviceCode}</>
                   )}
                 </button>
                 {!selectedDeviceId && (
                   <p className="text-xs text-amber-600 mt-2">
-                    ⚠️ Select a biometric device above to download the template.
+                    ⚠️ Select a biometric device above to download the empty template.
                   </p>
                 )}
               </div>
@@ -1659,6 +1690,103 @@ function AttendanceSheet() {
                   <p>• <strong>Format:</strong> Same as biometric machine export (days as columns)</p>
                   <p>• <strong>Cell format:</strong> IN time on first line, OUT time on second line</p>
                   <p>• <strong>Cross-midnight:</strong> Times like 00:33 are treated as OUT from previous day</p>
+                </div>
+              </div>
+
+              {/* Different Format Help Section - BILINGUAL */}
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <span className="text-4xl">🔧</span>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-amber-800 text-lg mb-2">
+                      Different Biometric Format? / अलग बायोमेट्रिक फॉर्मेट?
+                    </h3>
+                    
+                    {/* English */}
+                    <div className="bg-white/60 rounded-xl p-4 mb-4">
+                      <p className="text-amber-900 font-medium mb-2">🇬🇧 English:</p>
+                      <p className="text-amber-800 text-sm leading-relaxed">
+                        Every biometric device has its <strong>own unique format</strong> for exporting attendance data. 
+                        If your biometric machine exports data in a different format than shown above, 
+                        please contact the administrator. Share your attendance file format and we will help you import your data.
+                      </p>
+                    </div>
+                    
+                    {/* Hindi */}
+                    <div className="bg-white/60 rounded-xl p-4 mb-4">
+                      <p className="text-amber-900 font-medium mb-2">🇮🇳 हिंदी:</p>
+                      <p className="text-amber-800 text-sm leading-relaxed">
+                        हर बायोमेट्रिक डिवाइस का अटेंडेंस डेटा एक्सपोर्ट करने का <strong>अपना अलग फॉर्मेट</strong> होता है। 
+                        अगर आपकी बायोमेट्रिक मशीन ऊपर दिखाए गए फॉर्मेट से अलग फॉर्मेट में डेटा एक्सपोर्ट करती है, 
+                        तो कृपया एडमिनिस्ट्रेटर से संपर्क करें। अपनी अटेंडेंस फाइल का फॉर्मेट शेयर करें और हम आपका डेटा इम्पोर्ट करने में मदद करेंगे।
+                      </p>
+                    </div>
+
+                    {/* Contact Admin Button */}
+                    <div className="flex flex-wrap gap-3 mt-4">
+                      <button 
+                        onClick={async () => {
+                          const email = prompt("Enter your email address to receive help:\nआपका ईमेल एड्रेस दर्ज करें:");
+                          if (!email) return;
+                          
+                          const deviceName = prompt("Which biometric device do you use?\nआप कौन सा बायोमेट्रिक डिवाइस उपयोग करते हैं?");
+                          if (!deviceName) return;
+                          
+                          const message = prompt("Any additional details about your format?\nअपने फॉर्मेट के बारे में कोई अतिरिक्त जानकारी?", "My biometric machine exports data in a different format.");
+                          
+                          try {
+                            const response = await fetch(`${API_BASE}/attendance/template/request-help`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${getToken()}`,
+                                'X-Tenant-Id': getTenantId()
+                              },
+                              body: JSON.stringify({
+                                email: email,
+                                name: localStorage.getItem('hrms_user') ? JSON.parse(localStorage.getItem('hrms_user')).name : 'User',
+                                biometricDevice: deviceName,
+                                message: message || 'Help needed with attendance format'
+                              })
+                            });
+                            
+                            const data = await response.json();
+                            
+                            if (data.success) {
+                              alert(`✅ Request Submitted Successfully!\nTicket ID: ${data.ticketId}\n\nOur support team will contact you at ${email} to help with your ${deviceName} attendance format.\n\n✅ अनुरोध सफलतापूर्वक सबमिट हो गया!\nटिकट आईडी: ${data.ticketId}\n\nहमारी सपोर्ट टीम ${email} पर आपसे संपर्क करेगी।`);
+                            } else {
+                              alert('❌ Failed to submit request. Please try again.\n❌ अनुरोध सबमिट करने में विफल। कृपया पुनः प्रयास करें।');
+                            }
+                          } catch (error) {
+                            console.error('Error submitting format help request:', error);
+                            alert('❌ Failed to submit request. Please try again or email support@chandrahr.in\n❌ अनुरोध सबमिट करने में विफल। कृपया support@chandrahr.in पर ईमेल करें।');
+                          }
+                        }}
+                        className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-medium shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                      >
+                        <span className="text-lg">📧</span>
+                        Contact Admin / एडमिन से संपर्क करें
+                      </button>
+                      
+                      <a 
+                        href="mailto:support@chandrahr.in?subject=Biometric Format Help&body=Hi,%0A%0AMy biometric device exports attendance in a different format.%0A%0ADevice Name:%0ACompany:%0A%0APlease help me import my attendance data.%0A%0AThanks"
+                        className="px-5 py-2.5 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-medium hover:bg-amber-50 transition-all flex items-center gap-2"
+                      >
+                        <span className="text-lg">✉️</span>
+                        Email Support
+                      </a>
+                    </div>
+
+                    {/* Info Box */}
+                    <div className="mt-4 p-3 bg-amber-100/50 rounded-lg border border-amber-200">
+                      <p className="text-xs text-amber-700">
+                        <strong>💡 Tip:</strong> When contacting support, please attach a sample attendance export from your biometric machine. 
+                        This helps us understand your format quickly.
+                        <br/>
+                        <strong>💡 सुझाव:</strong> सपोर्ट से संपर्क करते समय, कृपया अपनी बायोमेट्रिक मशीन से एक सैंपल अटेंडेंस एक्सपोर्ट अटैच करें।
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </>

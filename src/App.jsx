@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -13,6 +13,19 @@ import ActivateAccount from "./routes/Public/ActivateAccount";
 import Dashboard from "./routes/Dashboard";
 import Login from "./routes/Auth/Login";
 import Signup from "./routes/Auth/Signup";
+
+// Role-based dashboard redirect
+function RoleBasedDashboard() {
+  const { user } = useAuth();
+  
+  // SUPER_ADMIN goes to admin dashboard
+  if (user?.role === 'SUPER_ADMIN') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  
+  // Everyone else gets regular dashboard
+  return <Dashboard />;
+}
 import EmployeeList from "./routes/Employees/EmployeeList";
 import EmployeeUpsert from "./routes/Employees/EmployeeUpsert";
 import EmployeeProfile from "./routes/Employees/EmployeeProfile";
@@ -79,7 +92,8 @@ function App() {
               <ProtectedRoute>
                 <MainLayout>
                   <Routes>
-                    <Route path="/" element={<Dashboard />} />
+                    {/* Default dashboard - redirects based on role */}
+                    <Route path="/" element={<RoleBasedDashboard />} />
                    
                     <Route path="/employees">
                       <Route index element={<EmployeeList />} />
@@ -110,6 +124,11 @@ function App() {
                     
                     {/* Super Admin Routes */}
                     <Route path="/admin/dashboard" element={<SuperAdminDashboard />} />
+                    <Route path="/admin/companies" element={<SuperAdminDashboard tab="companies" />} />
+                    <Route path="/admin/trials" element={<SuperAdminDashboard tab="trials" />} />
+                    <Route path="/admin/devices" element={<SuperAdminDashboard tab="devices" />} />
+                    <Route path="/admin/fraud" element={<SuperAdminDashboard tab="fraud" />} />
+                    <Route path="/admin/maintenance" element={<SuperAdminDashboard tab="maintenance" />} />
                   </Routes>
                 </MainLayout>
               </ProtectedRoute>

@@ -4,7 +4,7 @@ import './SuperAdminDashboard.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
-const SuperAdminDashboard = () => {
+const SuperAdminDashboard = ({ tab = 'overview' }) => {
   const { user, accessToken } = useAuth();
   const token = accessToken || sessionStorage.getItem('hrms_access_token');
   const [stats, setStats] = useState(null);
@@ -13,7 +13,18 @@ const SuperAdminDashboard = () => {
   const [duplicateIps, setDuplicateIps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  // Map tab prop to internal tab names
+  const tabMapping = {
+    'overview': 'overview',
+    'companies': 'companies',
+    'trials': 'overview',
+    'devices': 'devices',
+    'fraud': 'highrisk',
+    'maintenance': 'maintenance',
+    'highrisk': 'highrisk',
+    'duplicates': 'duplicates'
+  };
+  const [activeTab, setActiveTab] = useState(tabMapping[tab] || 'overview');
   const [statusFilter, setStatusFilter] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
 
