@@ -88,8 +88,9 @@ function AttendanceSheet() {
   console.log('🎯 User status:', localStorage.getItem("hrms_user") ? 'Present' : 'MISSING');
 
   const [activeTab, setActiveTab] = useState("monthly"); // Default to monthly report
-  const [month, setMonth] = useState(7); // July as default to match your test data
-  const [year, setYear] = useState(2025);
+  // Default to current month/year for latest attendance data
+  const [month, setMonth] = useState(() => new Date().getMonth() + 1); // Current month (1-12)
+  const [year, setYear] = useState(() => new Date().getFullYear()); // Current year
 
   /** ===================== TAB 1: IMPORT ===================== */
   const [selectedFile, setSelectedFile] = useState(null);
@@ -114,6 +115,11 @@ function AttendanceSheet() {
   const [selectedDeviceCode, setSelectedDeviceCode] = useState(""); // For encoding in filename
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [detectedDevice, setDetectedDevice] = useState(null); // Device extracted from uploaded file
+  
+  // Shift assignment validation state
+  const [shiftStatus, setShiftStatus] = useState(null); // { totalEmployees, withShift, withoutShift, unassignedEmployees }
+  const [shiftStatusLoading, setShiftStatusLoading] = useState(false);
+  const [showShiftWarning, setShowShiftWarning] = useState(false);
 
   // Device token encoding/decoding (same as employee import)
   const encodeDeviceToken = (deviceId, deviceCode) => {
@@ -171,7 +177,14 @@ function AttendanceSheet() {
     setDevicesLoading(true);
     try {
       const data = await fetchJson('/devices?activeOnly=true');
-      setDevices(Array.isArray(data) ? data : []);
+      const deviceList = Array.isArray(data) ? data : [];
+      setDevices(deviceList);
+      
+      // Auto-select if only one device exists
+      if (deviceList.length === 1 && !selectedDeviceId) {
+        setSelectedDeviceId(deviceList[0].id);
+        setSelectedDeviceCode(deviceList[0].deviceCode || deviceList[0].code || 'DEFAULT');
+      }
     } catch (e) {
       console.error('Failed to load devices:', e);
       setDevices([]);
@@ -180,11 +193,29 @@ function AttendanceSheet() {
     }
   };
 
-  // Load batches and devices when tab is active or month/year changes
+  // Load shift assignment status for validation
+  const loadShiftStatus = async () => {
+    setShiftStatusLoading(true);
+    try {
+      const data = await fetchJson('/employee-shifts/assignment-status');
+      setShiftStatus(data);
+      if (data.withoutShift > 0) {
+        setShowShiftWarning(true);
+      }
+    } catch (e) {
+      console.error('Failed to load shift status:', e);
+      setShiftStatus(null);
+    } finally {
+      setShiftStatusLoading(false);
+    }
+  };
+
+  // Load batches, devices, and shift status when tab is active or month/year changes
   useEffect(() => {
     if (activeTab === 'import') {
       loadExistingBatches();
       loadDevices();
+      loadShiftStatus();
     }
   }, [activeTab, month, year]);
 
@@ -599,7 +630,7 @@ function AttendanceSheet() {
   };
 
   const loadInlineLogs = async () => {
-    if (!selectedEmployee) return alert("Please select an employee");
+    if (!selectedEmployee) return; // Silently return if no employee selected
     setInlineLoading(true);
     setInlineError("");
     try {
@@ -612,6 +643,13 @@ function AttendanceSheet() {
       setInlineLoading(false);
     }
   };
+  
+  // Auto-load logs when employee is selected and tab is records
+  useEffect(() => {
+    if (activeTab === 'records' && selectedEmployee) {
+      loadInlineLogs();
+    }
+  }, [activeTab, selectedEmployee, month, year]);
 
   // Calculate summary from logs
   const logsSummary = useMemo(() => {
@@ -1359,6 +1397,52 @@ function AttendanceSheet() {
             </div>
           )}
 
+          {/* Shift Assignment Warning */}
+          {showShiftWarning && shiftStatus && shiftStatus.withoutShift > 0 && (
+            <div className="bg-orange-50 border border-orange-300 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">⚠️</span>
+                <div className="flex-1">
+                  <h3 className="font-bold text-orange-800">
+                    {shiftStatus.withoutShift} Employees Without Shift Assignment
+                  </h3>
+                  <p className="text-orange-700 text-sm mt-1">
+                    कृपया पहले इन कर्मचारियों को शिफ्ट असाइन करें। बिना शिफ्ट के कर्मचारियों की उपस्थिति आयात होगी लेकिन पेरोल गणना में शामिल नहीं होगी।
+                  </p>
+                  <p className="text-orange-600 text-sm mt-1">
+                    Please assign shifts to these employees first. Attendance will be imported but payroll calculations will be skipped for employees without shifts.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {shiftStatus.unassignedEmployees?.slice(0, 5).map((emp, idx) => (
+                      <span key={idx} className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs">
+                        {emp.empCode} - {emp.name}
+                      </span>
+                    ))}
+                    {shiftStatus.unassignedEmployees?.length > 5 && (
+                      <span className="bg-orange-200 text-orange-800 px-2 py-1 rounded text-xs font-medium">
+                        +{shiftStatus.unassignedEmployees.length - 5} more
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      onClick={() => window.location.href = '/shifts/assign'}
+                      className="px-4 py-2 bg-orange-500 text-white rounded-xl font-medium text-sm hover:bg-orange-600 transition-all"
+                    >
+                      🔧 Assign Shifts
+                    </button>
+                    <button
+                      onClick={() => setShowShiftWarning(false)}
+                      className="px-4 py-2 bg-white border border-orange-300 text-orange-700 rounded-xl font-medium text-sm hover:bg-orange-50 transition-all"
+                    >
+                      Proceed Anyway
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* All Imported Batches */}
           {existingBatches.length > 0 && (
             <div className="bg-white rounded-2xl shadow-sm border p-6">
@@ -1560,7 +1644,8 @@ function AttendanceSheet() {
                           // Reset detected device when manually changing
                           setDetectedDevice(null);
                         }}
-                        className="w-full px-3 py-2 border-2 border-emerald-400 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                        disabled={devices.length === 1}
+                        className={`w-full px-3 py-2 border-2 border-emerald-400 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${devices.length === 1 ? 'bg-emerald-50 cursor-not-allowed' : 'bg-white'}`}
                       >
                         <option value="">-- Select a biometric device --</option>
                         {devices.map(d => (
@@ -1570,7 +1655,11 @@ function AttendanceSheet() {
                           </option>
                         ))}
                       </select>
-                      {selectedDeviceId ? (
+                      {devices.length === 1 ? (
+                        <p className="text-xs text-emerald-700 mt-2 font-medium">
+                          ✅ Auto-selected: {selectedDeviceCode || devices[0]?.deviceCode}. Only one device configured.
+                        </p>
+                      ) : selectedDeviceId ? (
                         <p className="text-xs text-emerald-700 mt-2 font-medium">
                           ✅ Device selected: {selectedDeviceCode}. Now download template or upload attendance file.
                         </p>
@@ -1578,7 +1667,7 @@ function AttendanceSheet() {
                         <p className="text-xs text-amber-600 mt-2">
                           ⚠️ Please select a device first. The template will include employees assigned to this device.
                         </p>
-                      )}
+                      )
                     </>
                   )}
                 </div>
