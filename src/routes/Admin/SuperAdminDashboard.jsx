@@ -162,14 +162,34 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
     }
   };
 
-  const deleteTrial = async (tenantId) => {
-    if (!confirm(`Delete registration for ${tenantId}? This cannot be undone!`)) return;
+  const deleteTrial = async (tenantId, companyName) => {
+    // Find the company to use soft delete flow
+    const company = companies.find(c => c.id === tenantId);
+    if (company) {
+      // Use the proper soft delete flow
+      openSoftDeleteModal(company);
+      return;
+    }
+    
+    // Fallback: Ask for confirmation with strong warning
+    const reason = prompt(
+      `⚠️ WARNING: This will PERMANENTLY delete "${tenantId}"!\n\n` +
+      `This action CANNOT be undone. All company data will be lost.\n\n` +
+      `Enter reason for deletion (or Cancel to abort):`
+    );
+    if (!reason) return;
     
     setActionLoading(tenantId);
     try {
-      await fetchApi(`/api/admin/trials/${tenantId}`, { method: 'DELETE' });
+      // Try soft delete first
+      await fetchApi(`/api/admin/companies/${tenantId}/soft-delete`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, deletedBy: user?.email || 'Admin' }),
+      });
       const trialsData = await fetchApi('/api/admin/trials');
       setTrials(trialsData);
+      await loadCompanyData(); // Refresh companies including recycle bin
+      alert(`Company "${tenantId}" has been moved to recycle bin.`);
     } catch (err) {
       alert('Failed to delete: ' + err.message);
     } finally {
@@ -491,8 +511,8 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                             )}
                             <button 
                               className="btn-delete" 
-                              onClick={() => deleteTrial(trial.tenantId)}
-                              title="Delete">
+                              onClick={() => deleteTrial(trial.tenantId, trial.companyName)}
+                              title="Move to Recycle Bin">
                               🗑️
                             </button>
                           </>
