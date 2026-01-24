@@ -31,8 +31,9 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   // Company Management State
   const [companies, setCompanies] = useState([]);
   const [deletedCompanies, setDeletedCompanies] = useState([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [companyStats, setCompanyStats] = useState(null);
-  const [companyView, setCompanyView] = useState('active'); // 'active' or 'recyclebin'
+  const [companyView, setCompanyView] = useState('active'); // 'active', 'recyclebin', or 'pending'
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [companyDataCounts, setCompanyDataCounts] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -83,14 +84,22 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   // Load company management data
   const loadCompanyData = useCallback(async () => {
     try {
-      const [activeCompanies, recycledCompanies, statsData] = await Promise.all([
+      const [activeCompanies, recycledCompanies, statsData, trialsData] = await Promise.all([
         fetchApi('/api/admin/companies'),
         fetchApi('/api/admin/companies/recycle-bin'),
         fetchApi('/api/admin/companies/stats'),
+        fetchApi('/api/admin/trials'),
       ]);
       setCompanies(activeCompanies);
       setDeletedCompanies(recycledCompanies);
       setCompanyStats(statsData);
+      
+      // Filter pending registrations (trials that are PENDING status)
+      const pending = trialsData.filter(t => 
+        t.trialStatus === 'PENDING' || 
+        (t.trialStatus === undefined && !t.tenantId) // Some may not have status set
+      );
+      setPendingRegistrations(pending);
     } catch (err) {
       console.error('Failed to load company data:', err);
     }
@@ -255,6 +264,31 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
       alert(`Company "${company.name}" has been restored successfully!`);
     } catch (err) {
       alert('Failed to restore company: ' + err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Manual activation for pending registrations
+  const manualActivateCompany = async (email, companyName) => {
+    if (!confirm(`Activate company "${companyName}" (${email})?\n\nThis will create the tenant and admin user, allowing them to login immediately.`)) {
+      return;
+    }
+
+    setActionLoading(email);
+    try {
+      const result = await fetchApi(`/api/admin/activate-by-email?email=${encodeURIComponent(email)}`, {
+        method: 'POST',
+      });
+      
+      if (result.success) {
+        alert(`✅ Company activated successfully!\n\nTenant ID: ${result.tenantId}\nSubdomain: ${result.subdomain}\n\nUser can now login with email: ${email}`);
+        await loadCompanyData(); // Refresh to move from pending to active
+      } else {
+        alert(`❌ Activation failed: ${result.error}`);
+      }
+    } catch (err) {
+      alert('Failed to activate: ' + err.message);
     } finally {
       setActionLoading(null);
     }
@@ -561,6 +595,11 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                 🏢 Active Companies ({companies.length})
               </button>
               <button 
+                className={`view-btn ${companyView === 'pending' ? 'active' : ''}`}
+                onClick={() => setCompanyView('pending')}>
+                ⏳ Pending Activation ({pendingRegistrations.length})
+              </button>
+              <button 
                 className={`view-btn recycle ${companyView === 'recyclebin' ? 'active' : ''}`}
                 onClick={() => setCompanyView('recyclebin')}>
                 🗑️ Recycle Bin ({deletedCompanies.length})
@@ -607,6 +646,78 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                       </div>
                     </div>
                   ))
+                )}
+              </div>
+            )}
+
+            {/* Pending Activation View */}
+            {companyView === 'pending' && (
+              <div className="pending-registrations">
+                <div className="pending-header">
+                  <h3>⏳ Pending Activation</h3>
+                  <p className="pending-info">
+                    Companies that have registered but haven't activated their account yet. 
+                    You can manually activate them if email activation failed.
+                  </p>
+                </div>
+                
+                {pendingRegistrations.length === 0 ? (
+                  <div className="empty-pending">
+                    <span className="empty-icon">✅</span>
+                    <p>No pending activations</p>
+                    <small>All registrations have been activated</small>
+                  </div>
+                ) : (
+                  <div className="pending-list">
+                    {pendingRegistrations.map(registration => (
+                      <div key={registration.id || registration.tenantId || registration.adminEmail} className="pending-card">
+                        <div className="pending-info-section">
+                          <div className="pending-logo">
+                            {registration.companyName?.charAt(0)?.toUpperCase() || 'C'}
+                          </div>
+                          <div className="pending-details">
+                            <h4>{registration.companyName || 'Unknown Company'}</h4>
+                            <p className="pending-email">
+                              <strong>Email:</strong> {registration.adminEmail}
+                            </p>
+                            {registration.phone && (
+                              <p className="pending-phone">
+                                <strong>Phone:</strong> {registration.phone}
+                              </p>
+                            )}
+                            {registration.createdAt && (
+                              <p className="pending-date">
+                                <strong>Registered:</strong> {new Date(registration.createdAt).toLocaleString()}
+                              </p>
+                            )}
+                            {registration.tenantId && (
+                              <p className="pending-tenant">
+                                <strong>Tenant ID:</strong> {registration.tenantId}
+                              </p>
+                            )}
+                            {registration.trialStatus && (
+                              <p className="pending-status">
+                                <strong>Status:</strong> <span className="status-badge pending">{registration.trialStatus}</span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="pending-actions">
+                          <button 
+                            className="btn-activate"
+                            onClick={() => manualActivateCompany(registration.adminEmail, registration.companyName)}
+                            disabled={actionLoading === registration.adminEmail}
+                            title="Manually activate this company (creates tenant + admin user)">
+                            {actionLoading === registration.adminEmail ? (
+                              <>⏳ Activating...</>
+                            ) : (
+                              <>✅ Activate Now</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
