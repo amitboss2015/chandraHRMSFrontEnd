@@ -1037,15 +1037,50 @@ export default function EmployeeList() {
                     {importResult.errorCount > 0 && <span className="text-red-600">, {importResult.errorCount} had errors</span>}.
                   </div>
 
-                  {/* Errors */}
+                  {/* Duplicate Name Warnings (same name in different device) */}
+                  {importResult.duplicateWarnings && importResult.duplicateWarnings.length > 0 && (
+                    <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg">⚠️</span>
+                        <div>
+                          <p className="text-sm font-bold text-purple-800">
+                            {importResult.duplicateWarnings.length} employee(s) with same name found in other devices
+                          </p>
+                          <p className="text-xs text-purple-600 mt-1">
+                            अन्य डिवाइस में समान नाम वाले {importResult.duplicateWarnings.length} कर्मचारी मिले
+                          </p>
+                          <div className="mt-2 space-y-1">
+                            {importResult.duplicateWarnings.slice(0, 5).map((dup, idx) => (
+                              <div key={idx} className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded">
+                                Row {dup.rowNumber}: <strong>{dup.firstName} {dup.lastName}</strong> 
+                                (Code: {dup.empCode}) - exists in <strong>{dup.existingDevice}</strong>, 
+                                importing to <strong>{dup.targetDevice}</strong>
+                              </div>
+                            ))}
+                            {importResult.duplicateWarnings.length > 5 && (
+                              <div className="text-xs text-purple-600">
+                                ... and {importResult.duplicateWarnings.length - 5} more
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-purple-600 mt-2 italic">
+                            Note: These were still imported. Same person can't punch at multiple devices simultaneously.
+                            <br/>नोट: ये अभी भी आयातित किए गए। एक व्यक्ति एक साथ कई डिवाइस पर पंच नहीं कर सकता।
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Errors (real failures) */}
                   {importResult.errors && importResult.errors.length > 0 && (
-                    <div>
+                    <div className="mb-3">
                       <button
                         onClick={() => setShowErrors(!showErrors)}
                         className="flex items-center gap-2 text-red-600 font-medium hover:text-red-700 text-sm mb-2"
                       >
                         <span className={`transition-transform ${showErrors ? "rotate-90" : ""}`}>▶</span>
-                        {showErrors ? "Hide" : "Show"} {importResult.errors.length} Error(s)
+                        {showErrors ? "Hide" : "Show"} {importResult.errors.length} Error(s) - असफल
                       </button>
                       
                       {showErrors && (
@@ -1070,6 +1105,29 @@ export default function EmployeeList() {
                           </table>
                         </div>
                       )}
+                    </div>
+                  )}
+                  
+                  {/* Skipped entries (already exist) */}
+                  {importResult.skipped && importResult.skipped.length > 0 && (
+                    <div className="mb-3">
+                      <details className="text-sm">
+                        <summary className="cursor-pointer text-amber-600 font-medium hover:text-amber-700">
+                          ⏭ {importResult.skipped.length} Skipped (already exist) - पहले से मौजूद
+                        </summary>
+                        <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2 max-h-32 overflow-y-auto">
+                          {importResult.skipped.slice(0, 20).map((skip, idx) => (
+                            <div key={idx} className="text-xs text-amber-700 py-0.5">
+                              Row {skip.rowNumber}: <span className="font-mono">{skip.empCode}</span> - {skip.reason}
+                            </div>
+                          ))}
+                          {importResult.skipped.length > 20 && (
+                            <div className="text-xs text-amber-600 mt-1">
+                              ... and {importResult.skipped.length - 20} more
+                            </div>
+                          )}
+                        </div>
+                      </details>
                     </div>
                   )}
 
