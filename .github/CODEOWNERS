@@ -1,0 +1,25 @@
+# ============================================
+# CODEOWNERS - Auto-assign reviewers for PRs
+# ============================================
+# Amit Kumar is the owner and must review all PRs
+
+# Default owner for everything
+* @amitboss2015
+
+# React components
+/src/components/ @amitboss2015
+
+# Routes/Pages
+/src/routes/ @amitboss2015
+
+# Services/API
+/src/services/ @amitboss2015
+/src/context/ @amitboss2015
+
+# Configuration files
+/package.json @amitboss2015
+/vite.config.js @amitboss2015
+/tailwind.config.js @amitboss2015
+
+# Documentation
+*.md @amitboss2015

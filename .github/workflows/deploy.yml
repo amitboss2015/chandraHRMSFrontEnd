@@ -1,0 +1,100 @@
+# ============================================
+# Deploy Workflow - Auto-deploy on master merge
+# ============================================
+name: 🚀 Deploy to Production
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 🔨 Build for production
+        run: npm run build
+
+      - name: 📤 Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+  deploy:
+    name: Deploy to AWS EC2
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: 📥 Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: ./dist
+
+      - name: 🔑 Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: 📦 Package Frontend
+        run: |
+          cd dist
+          zip -rq ../frontend.zip .
+
+      - name: 📤 Upload to EC2
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            frontend.zip \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/
+
+      - name: 🚀 Deploy Frontend
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOY'
+            echo "📦 Extracting frontend..."
+            cd /tmp
+            rm -rf dist
+            unzip -oq frontend.zip -d dist
+            
+            echo "🔄 Deploying to web root..."
+            sudo rm -rf /var/www/hrms/*
+            sudo cp -r dist/* /var/www/hrms/
+            sudo chown -R www-data:www-data /var/www/hrms
+            
+            echo "🔄 Reloading Nginx..."
+            sudo systemctl reload nginx
+            
+            echo "✅ Frontend deployment complete!"
+          DEPLOY
+
+      - name: 🏥 Health Check
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'curl -sf http://localhost/ | head -5'
+          echo "✅ Frontend is healthy!"
+
+      - name: 📢 Deployment Summary
+        run: |
+          echo "🎉 Frontend deployed successfully!"
+          echo "📍 Server: ${{ secrets.EC2_HOST }}"
+          echo "🌐 URL: https://chandrahr.in"
+          echo "🕐 Time: $(date)"

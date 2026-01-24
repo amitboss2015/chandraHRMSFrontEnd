@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getToken, getTenantId } from "../../services/api";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8080/api' : '/api');
 
 /**
  * Biometric Device Management Page

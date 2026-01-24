@@ -6,7 +6,8 @@ const getApiBase = () => {
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return 'http://localhost:8080/api';
   }
-  return `http://${hostname}:8080/api`;
+  // For production, use relative path (Nginx proxies /api/* to backend)
+  return '/api';
 };
 
 const API_BASE = getApiBase();
@@ -29,11 +30,25 @@ export function AuthProvider({ children }) {
     if (stored) return stored;
     
     const hostname = window.location.hostname;
-    const parts = hostname.split('.');
-    if (parts.length >= 2 && !['www', 'localhost', '127'].includes(parts[0])) {
-      return parts[0];
+    
+    // Check if hostname is an IP address (don't extract tenant from IP)
+    const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    if (isIpAddress || hostname === 'localhost' || hostname === '127.0.0.1') {
+      return ''; // Empty string - let backend handle it
     }
-    return 'SASA001';
+    
+    // Check if it's the main domain (chandrahr.in or www.chandrahr.in)
+    if (hostname === 'chandrahr.in' || hostname === 'www.chandrahr.in') {
+      return ''; // Empty string - let backend handle it
+    }
+    
+    // Extract subdomain for multi-tenant setup
+    const parts = hostname.split('.');
+    if (parts.length >= 3 && !['www'].includes(parts[0])) {
+      return parts[0].toUpperCase();
+    }
+    
+    return ''; // Empty string - let backend handle it
   }, []);
 
   // Clear all auth data and redirect to login

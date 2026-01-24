@@ -18,8 +18,9 @@ export const getApiBase = () => {
     return 'http://localhost:8080/api';
   }
   
-  // For network access (mobile, other devices on same network)
-  return `http://${hostname}:8080/api`;
+  // For production (any domain or IP), use relative path
+  // Nginx will proxy /api/* to the backend
+  return '/api';
 };
 
 export const API_BASE = getApiBase();

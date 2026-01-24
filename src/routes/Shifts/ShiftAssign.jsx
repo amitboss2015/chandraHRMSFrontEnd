@@ -6,7 +6,7 @@ const getApiBase = () => {
   if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
-  return `http://${hostname}:8080/api`;
+  return '/api';
 };
 const API_BASE = getApiBase();
 

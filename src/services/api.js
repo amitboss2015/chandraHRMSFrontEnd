@@ -6,10 +6,16 @@
 // Dynamically set API base URL based on current host
 const getApiBase = () => {
   const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
+  
+  // For localhost development, use port 8080 directly
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return 'http://localhost:8080/api';
   }
-  return `http://${hostname}:8080/api`;
+  
+  // For production (any domain including IP), use relative path
+  // Nginx will proxy /api/* to the backend
+  return '/api';
 };
 
 const API_BASE = getApiBase();
