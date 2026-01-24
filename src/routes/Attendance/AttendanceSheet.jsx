@@ -1667,7 +1667,7 @@ function AttendanceSheet() {
                         <p className="text-xs text-amber-600 mt-2">
                           ⚠️ Please select a device first. The template will include employees assigned to this device.
                         </p>
-                      )
+                      )}
                     </>
                   )}
                 </div>

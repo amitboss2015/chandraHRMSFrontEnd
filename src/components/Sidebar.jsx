@@ -3,37 +3,65 @@ import React, { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-// Regular user menu items (for ADMIN, HR_MANAGER, etc.)
+// Regular user menu items with bilingual tooltips (for ADMIN, HR_MANAGER, etc.)
 const regularMenuItems = [
-  { path: "/", label: "Dashboard", icon: "📊" },
-  { path: "/employees", label: "Employees", icon: "👥" },
+  { 
+    path: "/", 
+    label: "Dashboard", 
+    icon: "📊",
+    tooltip: "View summary of attendance, employees & payroll | उपस्थिति, कर्मचारी और पेरोल का सारांश देखें"
+  },
+  { 
+    path: "/employees", 
+    label: "Employees", 
+    icon: "👥",
+    tooltip: "Add/Import/Manage employee data | कर्मचारी डेटा जोड़ें/आयात करें/प्रबंधित करें"
+  },
   { 
     label: "Shifts", 
-    icon: "🕐", 
+    icon: "🕐",
+    tooltip: "Define work timings & assign to employees | कार्य समय निर्धारित करें और कर्मचारियों को असाइन करें",
     children: [
-      { path: "/shifts", label: "Manage Shifts" },
-      { path: "/shifts/assign", label: "Assign Shifts" },
+      { path: "/shifts", label: "Manage Shifts", tooltip: "Create/Edit shift timings (9AM-6PM, Night, etc.) | शिफ्ट समय बनाएं/संपादित करें" },
+      { path: "/shifts/assign", label: "Assign Shifts", tooltip: "Link employees to their work shifts | कर्मचारियों को उनकी शिफ्ट से जोड़ें" },
     ]
   },
   { 
     label: "Attendance", 
-    icon: "✅", 
+    icon: "✅",
+    tooltip: "Import biometric data & view attendance records | बायोमेट्रिक डेटा आयात करें और उपस्थिति रिकॉर्ड देखें",
     children: [
-      { path: "/attendance", label: "Records" },
-      { path: "/attendance/missing-punch", label: "Missing Punch Fix" },
+      { path: "/attendance", label: "Records", tooltip: "View/Import monthly attendance from biometric device | बायोमेट्रिक से मासिक उपस्थिति देखें/आयात करें" },
+      { path: "/attendance/missing-punch", label: "Missing Punch Fix", tooltip: "Add manual punch for missed entries | छूटी हुई एंट्री के लिए मैन्युअल पंच जोड़ें" },
     ]
   },
-  { path: "/leaves", label: "Leaves", icon: "📝" },
-  { path: "/payroll", label: "Payroll", icon: "💰" },
-  { path: "/loans", label: "Loans", icon: "💳" },
+  { 
+    path: "/leaves", 
+    label: "Leaves", 
+    icon: "📝",
+    tooltip: "Manage leave types & employee leave requests | छुट्टी प्रकार और कर्मचारी छुट्टी अनुरोध प्रबंधित करें"
+  },
+  { 
+    path: "/payroll", 
+    label: "Payroll", 
+    icon: "💰",
+    tooltip: "Generate & manage monthly salary calculations | मासिक वेतन गणना बनाएं और प्रबंधित करें"
+  },
+  { 
+    path: "/loans", 
+    label: "Loans", 
+    icon: "💳",
+    tooltip: "Manage employee salary advances & loans | कर्मचारी वेतन अग्रिम और ऋण प्रबंधित करें"
+  },
   // { path: "/reports", label: "Reports", icon: "📈" },  // HIDDEN - Coming Soon
   { 
     label: "Settings", 
-    icon: "⚙️", 
+    icon: "⚙️",
+    tooltip: "Configure system settings | सिस्टम सेटिंग्स कॉन्फ़िगर करें",
     children: [
-      { path: "/holidays", label: "Holidays" },
-      { path: "/settings/salary-overtime", label: "Salary & OT Rules" },
-      { path: "/settings/devices", label: "Biometric Devices" },
+      { path: "/holidays", label: "Holidays", tooltip: "Define company holidays calendar | कंपनी छुट्टियों का कैलेंडर निर्धारित करें" },
+      { path: "/settings/salary-overtime", label: "Salary & OT Rules", tooltip: "Set overtime rates, late deductions, etc. | ओवरटाइम दर, लेट कटौती आदि सेट करें" },
+      { path: "/settings/devices", label: "Biometric Devices", tooltip: "Manage fingerprint/face recognition devices | फिंगरप्रिंट/फेस रिकग्निशन डिवाइस प्रबंधित करें" },
       // { path: "/settings/data-management", label: "Data Management" },  // HIDDEN - Coming Soon
     ]
   },
@@ -141,9 +169,10 @@ function Sidebar({ isOpen, onClose }) {
               regularMenuItems.map((item) => (
                 <li key={item.label}>
                   {item.children ? (
-                    <div>
+                    <div className="group relative">
                       <button
                         onClick={() => toggleMenu(item.label)}
+                        title={item.tooltip}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-left transition-all
                           ${isActiveParent(item.children) 
                             ? 'bg-emerald-500/20 text-emerald-400' 
@@ -156,14 +185,21 @@ function Sidebar({ isOpen, onClose }) {
                           ▶
                         </span>
                       </button>
+                      {/* Tooltip on hover */}
+                      {item.tooltip && (
+                        <div className="absolute left-full top-0 ml-2 px-3 py-2 bg-slate-700 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 w-64 whitespace-normal hidden lg:block">
+                          {item.tooltip}
+                        </div>
+                      )}
                       {(expandedMenus[item.label] || isActiveParent(item.children)) && (
                         <ul className="mt-1 ml-6 pl-4 border-l border-white/10 space-y-1">
                           {item.children.map(child => (
-                            <li key={child.path}>
+                            <li key={child.path} className="group/child relative">
                               <NavLink
                                 to={child.path}
                                 end={true}
                                 onClick={onClose}
+                                title={child.tooltip}
                                 className={({ isActive }) =>
                                   `block px-3 py-2 rounded-lg text-sm transition-all ${
                                     isActive 
@@ -174,26 +210,41 @@ function Sidebar({ isOpen, onClose }) {
                               >
                                 {child.label}
                               </NavLink>
+                              {/* Child tooltip */}
+                              {child.tooltip && (
+                                <div className="absolute left-full top-0 ml-2 px-3 py-2 bg-slate-700 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover/child:opacity-100 transition-opacity pointer-events-none z-50 w-56 whitespace-normal hidden lg:block">
+                                  {child.tooltip}
+                                </div>
+                              )}
                             </li>
                           ))}
                         </ul>
                       )}
                     </div>
                   ) : (
-                    <NavLink
-                      to={item.path}
-                      onClick={onClose}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
-                          isActive 
-                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25' 
-                            : 'hover:bg-white/5 text-slate-300'
-                        }`
-                      }
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="text-sm font-medium">{item.label}</span>
-                    </NavLink>
+                    <div className="group relative">
+                      <NavLink
+                        to={item.path}
+                        onClick={onClose}
+                        title={item.tooltip}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                            isActive 
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25' 
+                              : 'hover:bg-white/5 text-slate-300'
+                          }`
+                        }
+                      >
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-sm font-medium">{item.label}</span>
+                      </NavLink>
+                      {/* Tooltip on hover */}
+                      {item.tooltip && (
+                        <div className="absolute left-full top-0 ml-2 px-3 py-2 bg-slate-700 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 w-64 whitespace-normal hidden lg:block">
+                          {item.tooltip}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </li>
               ))

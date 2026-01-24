@@ -998,28 +998,43 @@ export default function EmployeeList() {
                     }`}>Import Results</h3>
                   </div>
                   
-                  <p className={`text-sm mb-4 ${
-                    importResult.success ? "text-green-700" : importResult.successCount > 0 ? "text-amber-700" : "text-red-700"
-                  }`}>{importResult.message}</p>
+                  {/* Clear success/failure message */}
+                  {importResult.successCount > 0 ? (
+                    <p className="text-sm mb-4 text-green-700 font-medium">
+                      ✅ Successfully imported {importResult.successCount} employee(s)!
+                      <span className="block text-xs text-green-600 mt-1">
+                        {importResult.successCount} कर्मचारी सफलतापूर्वक आयातित हुए!
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm mb-4 text-red-700">{importResult.message}</p>
+                  )}
                   
-                  {/* Stats */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-lg font-bold text-slate-800">{importResult.totalRows || 0}</div>
-                      <div className="text-xs text-slate-500">Total</div>
+                  {/* Stats - Show meaningful counts */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-green-200">
+                      <div className="text-2xl font-bold text-green-600">{importResult.successCount || 0}</div>
+                      <div className="text-xs text-green-600 font-medium">✓ Imported Successfully</div>
+                      <div className="text-xs text-green-500">सफलतापूर्वक आयातित</div>
                     </div>
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-lg font-bold text-green-600">{importResult.successCount || 0}</div>
-                      <div className="text-xs text-green-600">Imported</div>
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-amber-200">
+                      <div className="text-2xl font-bold text-amber-600">{importResult.skippedCount || 0}</div>
+                      <div className="text-xs text-amber-600 font-medium">⏭ Already Exists</div>
+                      <div className="text-xs text-amber-500">पहले से मौजूद</div>
                     </div>
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-lg font-bold text-red-600">{importResult.errorCount || 0}</div>
-                      <div className="text-xs text-red-600">Errors</div>
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-red-200">
+                      <div className="text-2xl font-bold text-red-600">{importResult.errorCount || 0}</div>
+                      <div className="text-xs text-red-600 font-medium">✗ Failed</div>
+                      <div className="text-xs text-red-500">असफल</div>
                     </div>
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-lg font-bold text-slate-500">{importResult.skippedCount || 0}</div>
-                      <div className="text-xs text-slate-500">Skipped</div>
-                    </div>
+                  </div>
+                  
+                  {/* Summary explanation */}
+                  <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 mb-3">
+                    <strong>Summary:</strong> Out of {(importResult.successCount || 0) + (importResult.skippedCount || 0) + (importResult.errorCount || 0)} data rows in your file, 
+                    {importResult.successCount > 0 && <span className="text-green-600"> {importResult.successCount} new employees were added</span>}
+                    {importResult.skippedCount > 0 && <span className="text-amber-600">, {importResult.skippedCount} were skipped (already exist)</span>}
+                    {importResult.errorCount > 0 && <span className="text-red-600">, {importResult.errorCount} had errors</span>}.
                   </div>
 
                   {/* Errors */}
@@ -1059,12 +1074,59 @@ export default function EmployeeList() {
                   )}
 
                   {importResult.successCount > 0 && (
-                    <button
-                      onClick={closeImportModal}
-                      className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium"
-                    >
-                      ✓ Done
-                    </button>
+                    <>
+                      {/* Next Steps Guidance */}
+                      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                        <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
+                          📋 Next Steps / अगले कदम
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <a 
+                            href="/shifts/assign" 
+                            className="flex items-center gap-2 text-blue-700 hover:text-blue-900 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                            title="Assign shifts to employees | कर्मचारियों को शिफ्ट असाइन करें"
+                          >
+                            <span className="text-lg">⏰</span>
+                            <span className="flex-1">
+                              <strong>Assign Shifts</strong> - Link employees to work timings
+                              <br/><span className="text-blue-600 text-xs">शिफ्ट असाइन करें - कर्मचारियों को कार्य समय से जोड़ें</span>
+                            </span>
+                            <span className="text-blue-400">→</span>
+                          </a>
+                          <a 
+                            href="/attendance" 
+                            className="flex items-center gap-2 text-blue-700 hover:text-blue-900 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                            title="Upload biometric attendance data | बायोमेट्रिक उपस्थिति डेटा अपलोड करें"
+                          >
+                            <span className="text-lg">📤</span>
+                            <span className="flex-1">
+                              <strong>Import Attendance</strong> - Upload biometric punch data
+                              <br/><span className="text-blue-600 text-xs">उपस्थिति आयात करें - बायोमेट्रिक पंच डेटा अपलोड करें</span>
+                            </span>
+                            <span className="text-blue-400">→</span>
+                          </a>
+                          <a 
+                            href="/settings/devices" 
+                            className="flex items-center gap-2 text-blue-700 hover:text-blue-900 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                            title="Add more biometric devices if needed | यदि आवश्यक हो तो और बायोमेट्रिक डिवाइस जोड़ें"
+                          >
+                            <span className="text-lg">📟</span>
+                            <span className="flex-1">
+                              <strong>Manage Devices</strong> - Add more biometric devices (optional)
+                              <br/><span className="text-blue-600 text-xs">डिवाइस प्रबंधित करें - और बायोमेट्रिक डिवाइस जोड़ें (वैकल्पिक)</span>
+                            </span>
+                            <span className="text-blue-400">→</span>
+                          </a>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={closeImportModal}
+                        className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium"
+                      >
+                        ✓ Done
+                      </button>
+                    </>
                   )}
                 </div>
               )}
