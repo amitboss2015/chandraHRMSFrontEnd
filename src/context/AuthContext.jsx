@@ -192,8 +192,14 @@ export function AuthProvider({ children }) {
     setLoading(true);
 
     try {
-      const tenantId = getTenantId();
-      console.log('🔐 Login attempt:', { email, tenantId });
+      // IMPORTANT: Don't use stored tenantId for login - let backend resolve from email
+      // This prevents issues when switching between accounts (e.g., SUPER_ADMIN to regular user)
+      // Clear any previously stored tenant to avoid conflicts
+      localStorage.removeItem('hrms_tenant_id');
+      
+      // For login, don't send tenantId - backend will resolve it from email
+      const tenantId = ''; // Empty - let backend handle
+      console.log('🔐 Login attempt:', { email, tenantId: '(auto-resolve)' });
       
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
