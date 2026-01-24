@@ -39,24 +39,33 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-slate-900 flex items-center justify-center p-4">
       {/* Background Pattern */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl"></div>
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl"></div>
       </div>
 
       {/* Login Card */}
       <div className="relative w-full max-w-md">
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-8 py-10 text-center">
-            <div className="w-20 h-20 mx-auto bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4">
-              <span className="text-4xl font-bold text-emerald-600">C</span>
+          {/* Header - Desi Orange/Saffron Theme */}
+          <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 px-8 py-10 text-center">
+            {/* Workforce Management Logo */}
+            <div className="w-20 h-20 mx-auto bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4 relative overflow-hidden">
+              {/* Abstract workforce icon */}
+              <div className="flex flex-col items-center">
+                <div className="flex gap-0.5">
+                  <div className="w-3 h-6 bg-orange-500 rounded-t-full"></div>
+                  <div className="w-3 h-8 bg-amber-600 rounded-t-full"></div>
+                  <div className="w-3 h-5 bg-yellow-500 rounded-t-full"></div>
+                </div>
+                <div className="w-10 h-1 bg-orange-400 rounded-full mt-1"></div>
+              </div>
             </div>
             <h1 className="text-2xl font-bold text-white">ChandraHR</h1>
-            <p className="text-emerald-100 text-sm mt-1">Workforce Management Made Simple</p>
+            <p className="text-orange-100 text-sm mt-1">कर्मचारी प्रबंधन • Workforce Management</p>
           </div>
 
           {/* Form */}
@@ -80,7 +89,7 @@ function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
                   required
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
                 />
               </div>
             </div>
@@ -96,7 +105,7 @@ function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
-                  className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="button"
@@ -111,10 +120,10 @@ function Login() {
             {/* Remember Me & Forgot */}
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 text-white/60 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500" />
+                <input type="checkbox" className="w-4 h-4 rounded border-white/20 bg-white/5 text-orange-500 focus:ring-orange-500" />
                 Remember me
               </label>
-              <a href="#" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+              <a href="#" className="text-amber-400 hover:text-amber-300 transition-colors">
                 Forgot password?
               </a>
             </div>
@@ -123,7 +132,7 @@ function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 hover:from-orange-600 hover:via-amber-600 hover:to-yellow-600 text-white font-semibold rounded-xl shadow-lg shadow-orange-500/25 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -169,7 +178,7 @@ function Login() {
           <div className="px-8 py-4 bg-white/5 border-t border-white/10 text-center">
             <p className="text-white/50 text-sm">
               New company?{' '}
-              <Link to="/register" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+              <Link to="/register" className="text-amber-400 hover:text-amber-300 font-medium transition-colors">
                 Create your company for free
               </Link>
             </p>
@@ -178,7 +187,7 @@ function Login() {
 
         {/* Footer Text */}
         <p className="text-center text-white/30 text-xs mt-6">
-          © 2026 HRMS Portal. Secure & Reliable HR Management.
+          © 2026 ChandraHR. Powering Indian Workforce Management.
         </p>
       </div>
     </div>
