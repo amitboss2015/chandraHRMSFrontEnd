@@ -84,24 +84,20 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   // Load company management data
   const loadCompanyData = useCallback(async () => {
     try {
-      const [activeCompanies, recycledCompanies, statsData, trialsData] = await Promise.all([
+      const [activeCompanies, recycledCompanies, statsData, pendingRegs] = await Promise.all([
         fetchApi('/api/admin/companies'),
         fetchApi('/api/admin/companies/recycle-bin'),
         fetchApi('/api/admin/companies/stats'),
-        fetchApi('/api/admin/trials'),
+        fetchApi('/api/admin/pending-registrations').catch(() => []), // Fallback to empty array if endpoint not available
       ]);
       setCompanies(activeCompanies);
       setDeletedCompanies(recycledCompanies);
       setCompanyStats(statsData);
-      
-      // Filter pending registrations (trials that are PENDING status)
-      const pending = trialsData.filter(t => 
-        t.trialStatus === 'PENDING' || 
-        (t.trialStatus === undefined && !t.tenantId) // Some may not have status set
-      );
-      setPendingRegistrations(pending);
+      setPendingRegistrations(Array.isArray(pendingRegs) ? pendingRegs : []);
     } catch (err) {
       console.error('Failed to load company data:', err);
+      // Set empty arrays on error
+      setPendingRegistrations([]);
     }
   }, [fetchApi]);
 
