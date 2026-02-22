@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { usePeriodSelection } from "../../utils/monthYearState";
+import TemplateSampleDisplay from "../../components/TemplateSampleDisplay";
 
 /** ======= CONFIG ======= */
 const getApiBase = () => {
@@ -17,10 +19,52 @@ const API_BASE = getApiBase();
 const getToken = () => sessionStorage.getItem("hrms_access_token") || "";
 const getTenantId = () => localStorage.getItem("hrms_tenant_id") || "SASA001";
 
-/** Simple JSON fetcher that adds auth and tenant headers */
+/** Download a URL (e.g. errors CSV) with auth headers and trigger file save */
+async function downloadWithAuth(url, filename = "download.csv") {
+  const token = getToken();
+  const tenantId = getTenantId();
+  const resp = await fetch(url, {
+    headers: {
+      "X-Tenant-Id": tenantId,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!resp.ok) throw new Error(resp.statusText || "Download failed");
+  const blob = await resp.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** Request cache for deduplication - prevents multiple simultaneous calls to same endpoint */
+const requestCache = new Map();
+const pendingRequests = new Map();
+
+/** Simple JSON fetcher that adds auth and tenant headers with request deduplication */
 async function fetchJson(path, options = {}) {
   const token = getToken();
   const tenantId = getTenantId();
+  
+  // Create cache key from path and options
+  const cacheKey = `${path}:${JSON.stringify(options)}`;
+  
+  // Check if there's already a pending request for this endpoint
+  if (pendingRequests.has(cacheKey)) {
+    console.log(`⏳ Deduplicating request: ${path} - waiting for existing request`);
+    return pendingRequests.get(cacheKey);
+  }
+  
+  // Check cache (5 second TTL for GET requests) - skip cache for attendance summary so Refresh gets fresh data
+  const skipCache = path.includes('/attendance/summary') || options.bypassCache;
+  if (!skipCache && (options.method === 'GET' || !options.method)) {
+    const cached = requestCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 5000) {
+      console.log(`✅ Using cached response: ${path}`);
+      return Promise.resolve(cached.data);
+    }
+  }
   
   console.log(`📡 fetchJson: ${path}`, { 
     hasToken: !!token, 
@@ -44,35 +88,53 @@ async function fetchJson(path, options = {}) {
   
   console.log('📤 Request headers:', Object.keys(headers));
   
-  const resp = await fetch(`${API_BASE}${path}`, {
+  // Create the request promise
+  const requestPromise = fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
-  });
+  })
+    .then(async (resp) => {
+      console.log(`📥 Response: ${path}`, { status: resp.status, ok: resp.ok });
+      
+      // Handle auth errors - but DON'T immediately redirect, let's debug first
+      if (resp.status === 401 || resp.status === 403) {
+        console.log(`🔒 Auth error (${resp.status}) for ${path}`);
+        console.log('🔍 Token that was sent:', token ? token.substring(0, 50) + '...' : 'NONE');
+        console.log('🔍 Response headers:', [...resp.headers.entries()]);
+        const errorText = await resp.text();
+        console.log('🔍 Response body:', errorText);
+        
+        // DON'T redirect for now - just throw error so we can debug
+        // sessionStorage.removeItem('hrms_access_token');
+        // localStorage.removeItem('hrms_user');
+        // window.location.href = '/login';
+        throw new Error(`Auth error ${resp.status}: ${errorText || 'No details'}`);
+      }
+      
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) return {};
+      return resp.json();
+    })
+    .then((data) => {
+      // Cache successful GET requests (skip cache for attendance summary so Refresh gets fresh data)
+      if (!skipCache && (options.method === 'GET' || !options.method)) {
+        requestCache.set(cacheKey, { data, timestamp: Date.now() });
+      }
+      return data;
+    })
+    .finally(() => {
+      // Remove from pending requests
+      pendingRequests.delete(cacheKey);
+    });
   
-  console.log(`📥 Response: ${path}`, { status: resp.status, ok: resp.ok });
+  // Store pending request
+  pendingRequests.set(cacheKey, requestPromise);
   
-  // Handle auth errors - but DON'T immediately redirect, let's debug first
-  if (resp.status === 401 || resp.status === 403) {
-    console.log(`🔒 Auth error (${resp.status}) for ${path}`);
-    console.log('🔍 Token that was sent:', token ? token.substring(0, 50) + '...' : 'NONE');
-    console.log('🔍 Response headers:', [...resp.headers.entries()]);
-    const errorText = await resp.text();
-    console.log('🔍 Response body:', errorText);
-    
-    // DON'T redirect for now - just throw error so we can debug
-    // sessionStorage.removeItem('hrms_access_token');
-    // localStorage.removeItem('hrms_user');
-    // window.location.href = '/login';
-    throw new Error(`Auth error ${resp.status}: ${errorText || 'No details'}`);
-  }
-  
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
-  const contentType = resp.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) return {};
-  return resp.json();
+  return requestPromise;
 }
 
 /** Month utilities */
@@ -81,16 +143,33 @@ const today = new Date();
 
 function AttendanceSheet() {
   const navigate = useNavigate();
+  const location = useLocation();
   
   // Debug: Log component mount and token status
   console.log('🎯 AttendanceSheet MOUNTED');
   console.log('🎯 Token status:', sessionStorage.getItem("hrms_access_token") ? 'Present' : 'MISSING');
   console.log('🎯 User status:', localStorage.getItem("hrms_user") ? 'Present' : 'MISSING');
+  console.log('🎯 Current path:', location.pathname);
 
-  const [activeTab, setActiveTab] = useState("monthly"); // Default to monthly report
-  // Default to current month/year for latest attendance data
-  const [month, setMonth] = useState(() => new Date().getMonth() + 1); // Current month (1-12)
-  const [year, setYear] = useState(() => new Date().getFullYear()); // Current year
+  // Determine initial tab from URL path
+  const getInitialTab = () => {
+    if (location.pathname.includes('/import')) {
+      return "import";
+    } else if (location.pathname.includes('/records')) {
+      return "records";
+    }
+    return "monthly"; // Default
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab());
+  
+  // Update tab when URL changes
+  useEffect(() => {
+    const tab = getInitialTab();
+    setActiveTab(tab);
+  }, [location.pathname]);
+  // Use shared month/year selection that persists across pages
+  const { month, year, setMonth, setYear } = usePeriodSelection();
 
   /** ===================== TAB 1: IMPORT ===================== */
   const [selectedFile, setSelectedFile] = useState(null);
@@ -160,9 +239,10 @@ function AttendanceSheet() {
     setBatchesLoading(true);
     try {
       const data = await fetchJson('/attendance/import/batches');
-      setExistingBatches(Array.isArray(data) ? data : []);
-      // Check if there's a batch for the current month/year
-      const batchForMonth = data.find(b => b.month === month && b.year === year);
+      const list = Array.isArray(data) ? data : [];
+      setExistingBatches(list);
+      // First batch for current month/year (for info message; multiple uploads allowed)
+      const batchForMonth = list.find(b => b.month === month && b.year === year);
       setExistingBatchForMonth(batchForMonth || null);
     } catch (e) {
       console.error('Failed to load batches:', e);
@@ -211,13 +291,21 @@ function AttendanceSheet() {
   };
 
   // Load batches, devices, and shift status when tab is active or month/year changes
+  // Only reload devices when tab becomes active (not on month/year change)
   useEffect(() => {
     if (activeTab === 'import') {
       loadExistingBatches();
       loadDevices();
       loadShiftStatus();
     }
-  }, [activeTab, month, year]);
+  }, [activeTab]); // Removed month, year - batches reload separately when needed
+
+  // Reload batches when month/year changes (only if import tab is active)
+  useEffect(() => {
+    if (activeTab === 'import') {
+      loadExistingBatches();
+    }
+  }, [month, year]);
 
   const handleDownloadTemplate = async () => {
     // Require device selection before template download
@@ -228,11 +316,8 @@ function AttendanceSheet() {
     
     setDownloadingTemplate(true);
     try {
-      // Include deviceId and deviceCode in the URL
-      let url = `${API_BASE}/attendance/template/download?month=${month}&year=${year}`;
-      if (selectedDeviceId && selectedDeviceCode) {
-        url += `&deviceId=${selectedDeviceId}&deviceCode=${encodeURIComponent(selectedDeviceCode)}`;
-      }
+      // Device ID is now REQUIRED in the endpoint
+      const url = `${API_BASE}/attendance/template/download?month=${month}&year=${year}&deviceId=${selectedDeviceId}`;
       
       const resp = await fetch(url, {
         headers: { 
@@ -240,7 +325,12 @@ function AttendanceSheet() {
           "Authorization": `Bearer ${getToken()}`
         },
       });
-      if (!resp.ok) throw new Error("Failed to download template");
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(errorText || "Failed to download template");
+      }
+      
       const blob = await resp.blob();
       
       // Get filename from Content-Disposition header or construct it
@@ -251,11 +341,7 @@ function AttendanceSheet() {
         filename = filenameMatch ? filenameMatch[1].replace(/"/g, '') : null;
       }
       if (!filename) {
-        if (selectedDeviceId && selectedDeviceCode) {
-          filename = `attendance_template_${year}_${String(month).padStart(2, '0')}_device_${selectedDeviceId}_${selectedDeviceCode}.xlsx`;
-        } else {
-          filename = `attendance_template_${year}_${String(month).padStart(2, '0')}.xlsx`;
-        }
+        filename = `attendance_template_${year}_${String(month).padStart(2, '0')}_device_${selectedDeviceId}_${selectedDeviceCode}.xlsx`;
       }
       
       const urlBlob = window.URL.createObjectURL(blob);
@@ -341,11 +427,12 @@ function AttendanceSheet() {
       return alert("Please upload a valid Excel file (.xls or .xlsx) or CSV file.");
     }
     
-    // Validate device selection or detection
-    const deviceIdToUse = detectedDevice ? detectedDevice.deviceId : selectedDeviceId;
-    if (!deviceIdToUse) {
-      return alert("Please select a biometric device first, or upload a template downloaded from the system.");
+    // Validate device selection - REQUIRED
+    if (!selectedDeviceId) {
+      return alert("Please select a biometric device first. The template must match the selected device.");
     }
+    
+    const deviceIdToUse = selectedDeviceId; // Always use selected device (validation happens on backend)
     
     setImportError("");
     setPreviewData(null);
@@ -399,6 +486,15 @@ function AttendanceSheet() {
       return alert("Please select a biometric device first.");
     }
     
+    // Confirmation when attendance for this period already exists (overlap / merge)
+    const hasOverlap = existingBatchForMonth || previewData?.overlapWarning;
+    if (hasOverlap && !window.confirm(
+      "Some employee attendance for this period already exists in the system. " +
+      "New records will be merged; duplicates for the same employee and time will not be created.\n\nContinue with import?"
+    )) {
+      return;
+    }
+    
     setImportError("");
     setImportResult(null);
     
@@ -410,8 +506,8 @@ function AttendanceSheet() {
       form.append("year", String(year));
       
       // Build URL with deviceId (required)
-      let url = `${API_BASE}/attendance/import?deviceId=${deviceIdToUse}`;
-      console.log('📟 Import with device:', deviceIdToUse, detectedDevice ? '(from filename)' : '(manually selected)');
+      const url = `${API_BASE}/attendance/import?deviceId=${deviceIdToUse}`;
+      console.log('📟 Import with device:', deviceIdToUse, '(selected device)');
       
       const resp = await fetch(url, {
         method: "POST",
@@ -493,6 +589,11 @@ function AttendanceSheet() {
   const [inlineLogs, setInlineLogs] = useState([]);
   const [inlineLoading, setInlineLoading] = useState(false);
   const [inlineError, setInlineError] = useState("");
+  const [attendanceTotals, setAttendanceTotals] = useState({ 
+    totalOtDeductionMins: 0, 
+    totalLateDeductionMins: 0,
+    totalEarlyDeductionMins: 0 
+  });
   
   // Filter employees based on search
   const filteredEmployees = employees.filter(emp => {
@@ -599,6 +700,63 @@ function AttendanceSheet() {
     }
   };
 
+  const handleRejectLate = async (dayId, date) => {
+    if (!dayId) {
+      alert("Cannot reject: Day ID not found");
+      return;
+    }
+    
+    const remarks = prompt("Enter reason for rejection (optional):", "Rejected by admin");
+    if (remarks === null) return; // User cancelled
+    
+    try {
+      const response = await fetch(`${API_BASE}/attendance/reject-late/${dayId}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': getTenantId(),
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({ remarks, rejectedBy: 'Admin' })
+      });
+      
+      if (!response.ok) throw new Error(await response.text());
+      
+      alert(`Late arrival rejected for ${date}. Deduction will apply.`);
+      loadInlineLogs(); // Reload to show updated status
+    } catch (e) {
+      alert('Failed to reject: ' + (e.message || 'Unknown error'));
+    }
+  };
+
+  const handleRevertLate = async (dayId, date) => {
+    if (!dayId) {
+      alert("Cannot revert: Day ID not found");
+      return;
+    }
+    
+    if (!confirm(`Revert late status to pending for ${date}?`)) return;
+    
+    try {
+      const response = await fetch(`${API_BASE}/attendance/revert-late/${dayId}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': getTenantId(),
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({})
+      });
+      
+      if (!response.ok) throw new Error(await response.text());
+      
+      alert(`Late status reverted to pending for ${date}`);
+      loadInlineLogs(); // Reload to show updated status
+    } catch (e) {
+      alert('Failed to revert: ' + (e.message || 'Unknown error'));
+    }
+  };
+
   // Handle approving early departure
   const handleApproveEarlyOut = async (dayId, date) => {
     if (!dayId) {
@@ -634,13 +792,84 @@ function AttendanceSheet() {
     setInlineLoading(true);
     setInlineError("");
     try {
-      const data = await fetchJson(`/attendance/logs?month=${month}&year=${year}&empCode=${selectedEmployee}`);
-      setInlineLogs(Array.isArray(data) ? data : []);
+      const response = await fetchJson(`/attendance/logs?month=${month}&year=${year}&empCode=${selectedEmployee}`);
+      console.log('📊 Attendance logs response:', response);
+      // Handle new response structure with totals
+      if (response && response.logs) {
+        console.log('✅ Using new response format with logs and totals');
+        setInlineLogs(Array.isArray(response.logs) ? response.logs : []);
+        setAttendanceTotals({
+          totalOtDeductionMins: response.totalOtDeductionMins || 0,
+          totalLateDeductionMins: response.totalLateDeductionMins || 0,
+          totalEarlyDeductionMins: response.totalEarlyDeductionMins || 0
+        });
+        console.log('📈 Totals set:', { 
+          ot: response.totalOtDeductionMins || 0, 
+          late: response.totalLateDeductionMins || 0,
+          early: response.totalEarlyDeductionMins || 0
+        });
+      } else {
+        // Fallback for old response format (array)
+        console.log('⚠️ Using old response format (array)');
+        setInlineLogs(Array.isArray(response) ? response : []);
+        setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
+      }
     } catch (e) {
       setInlineError(e.message || "Failed to load logs");
       setInlineLogs([]);
+      setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
     } finally {
       setInlineLoading(false);
+    }
+  };
+  
+  const handleExportExcel = async () => {
+    if (!selectedEmployee || inlineLogs.length === 0) {
+      alert('Please select an employee and load attendance data first');
+      return;
+    }
+    
+    try {
+      const token = getToken();
+      const tenantId = getTenantId();
+      
+      if (!token) {
+        alert('Please login first');
+        window.location.href = '/login';
+        return;
+      }
+      
+      const url = `${API_BASE}/attendance/logs/export?month=${month}&year=${year}&empCode=${selectedEmployee}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Tenant-Id': tenantId
+        }
+      });
+      
+      if (response.status === 401 || response.status === 403) {
+        alert('Session expired. Please login again.');
+        window.location.href = '/login';
+        return;
+      }
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error('Export failed: ' + (errorText || response.statusText));
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Attendance_${selectedEmployee}_${String(month).padStart(2, '0')}_${year}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (e) {
+      alert('Failed to export: ' + (e.message || 'Unknown error'));
     }
   };
   
@@ -689,13 +918,60 @@ function AttendanceSheet() {
   const [summaryRows, setSummaryRows] = useState([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [selectedDeviceForSummary, setSelectedDeviceForSummary] = useState(""); // Device filter for summary
+  const [summaryDevices, setSummaryDevices] = useState([]); // Devices for summary filter
+  const [summaryDevicesLoading, setSummaryDevicesLoading] = useState(false);
+  const [sortBy, setSortBy] = useState("present"); // Sort field: "present", "absent", "name", "empCode"
+  const [sortOrder, setSortOrder] = useState("desc"); // "asc" or "desc"
+
+  // Load devices for summary filter
+  const loadSummaryDevices = async () => {
+    setSummaryDevicesLoading(true);
+    try {
+      const data = await fetchJson('/devices?activeOnly=true');
+      setSummaryDevices(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Failed to load devices for summary:', e);
+      setSummaryDevices([]);
+    } finally {
+      setSummaryDevicesLoading(false);
+    }
+  };
 
   const loadSummary = async () => {
+    // Validate parameters before making API call
+    if (!month || !year) {
+      console.warn('⚠️ Cannot load summary: month or year is missing', { month, year });
+      setSummaryError("Please select both month and year");
+      setSummaryRows([]);
+      return;
+    }
+    
     setSummaryLoading(true);
     setSummaryError("");
     try {
       const data = await fetchJson(`/attendance/summary?month=${month}&year=${year}`);
-      setSummaryRows(Array.isArray(data) ? data : []);
+      let filteredData = Array.isArray(data) ? data : [];
+      
+      // Filter by device if selected
+      if (selectedDeviceForSummary) {
+        try {
+          // Get employees for the selected device
+          const employeesForDevice = await fetchJson(`/employees/code-mapping?deviceId=${selectedDeviceForSummary}`);
+          if (Array.isArray(employeesForDevice) && employeesForDevice.length > 0) {
+            const deviceEmpCodes = new Set(employeesForDevice.map(e => e.systemCode || e.empCode).filter(Boolean));
+            filteredData = filteredData.filter(row => deviceEmpCodes.has(row.empCode));
+          } else {
+            // No employees found for this device
+            filteredData = [];
+          }
+        } catch (deviceError) {
+          console.error('Failed to filter by device:', deviceError);
+          // Continue with all data if device filter fails
+        }
+      }
+      
+      setSummaryRows(filteredData);
     } catch (e) {
       setSummaryError(e.message || "Failed to load summary");
       setSummaryRows([]);
@@ -769,28 +1045,108 @@ function AttendanceSheet() {
     }
   };
 
+  // Load devices when monthly tab becomes active (only once)
   useEffect(() => { 
-    if (activeTab === "monthly") loadSummary(); 
-  }, [activeTab, month, year]);
+    if (activeTab === "monthly") {
+      loadSummaryDevices();
+    }
+  }, [activeTab]); // Only when tab changes, not on month/year/device change
+
+  // Load summary when month/year/device changes (only if monthly tab is active)
+  useEffect(() => { 
+    if (activeTab === "monthly" && month && year) {
+      loadSummary(); 
+    }
+  }, [activeTab, month, year, selectedDeviceForSummary]); // Summary depends on these
 
   const formatDuration = (totalMins) => {
     if (!totalMins || totalMins === 0) return "-";
-    const hrs = Math.floor(totalMins / 60);
-    const mins = totalMins % 60;
-    return `${hrs}h ${mins}m`;
+    const absMins = Math.abs(totalMins);
+    const hrs = Math.floor(absMins / 60);
+    const mins = absMins % 60;
+    const sign = totalMins < 0 ? "-" : "";
+    return `${sign}${hrs}h ${mins}m`;
   };
 
-  // Calculate totals for summary
+  // Sort and filter summary rows
+  const sortedSummaryRows = useMemo(() => {
+    if (!summaryRows.length) return [];
+    
+    const sorted = [...summaryRows].sort((a, b) => {
+      let aVal, bVal;
+      
+      switch (sortBy) {
+        case "present":
+          aVal = a.present || 0;
+          bVal = b.present || 0;
+          break;
+        case "absent":
+          aVal = a.absent || 0;
+          bVal = b.absent || 0;
+          break;
+        case "name":
+          aVal = (a.empName || a.name || '').toLowerCase();
+          bVal = (b.empName || b.name || '').toLowerCase();
+          break;
+        case "empCode":
+          aVal = (a.empCode || '').toLowerCase();
+          bVal = (b.empCode || '').toLowerCase();
+          break;
+        default:
+          aVal = a.present || 0;
+          bVal = b.present || 0;
+      }
+      
+      if (typeof aVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      } else {
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+    });
+    
+    return sorted;
+  }, [summaryRows, sortBy, sortOrder]);
+
+  // Calculate totals for summary (using filtered/sorted rows)
   const summaryTotals = useMemo(() => {
-    if (!summaryRows.length) return null;
+    if (!sortedSummaryRows.length) return null;
+    
+    // Calculate total working days in the month (excluding weekends/holidays)
+    const yearMonth = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let totalWorkingDays = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month - 1, day);
+      const dayOfWeek = date.getDay();
+      // Count only weekdays (Monday=1 to Friday=5)
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        totalWorkingDays++;
+      }
+    }
+    
+    // Calculate totals
+    const totalPresent = sortedSummaryRows.reduce((sum, r) => sum + (r.present || 0), 0);
+    const totalLeave = sortedSummaryRows.reduce((sum, r) => sum + (r.leaveDays || r.leave || 0), 0);
+    const totalWeeklyOff = sortedSummaryRows.reduce((sum, r) => sum + (r.weeklyOff || 0), 0);
+    const totalHolidays = sortedSummaryRows.reduce((sum, r) => sum + (r.holidays || 0), 0);
+    const totalHalfDays = sortedSummaryRows.reduce((sum, r) => sum + (r.halfDays || 0), 0);
+    
+    // Calculate absent: Total working days - (Present + Leave + HalfDays/2)
+    // Note: Each employee has their own working days based on their weekly off config
+    // For accurate calculation, we should sum absent from each employee's record
+    const totalAbsent = sortedSummaryRows.reduce((sum, r) => sum + (r.absent || 0), 0);
+    
     return {
-      totalEmployees: summaryRows.length,
-      totalPresent: summaryRows.reduce((sum, r) => sum + (r.present || 0), 0),
-      totalAbsent: summaryRows.reduce((sum, r) => sum + (r.absent || 0), 0),
-      totalLeave: summaryRows.reduce((sum, r) => sum + (r.leaveDays || r.leave || 0), 0),
-      totalWorkMins: summaryRows.reduce((sum, r) => sum + (r.totalWorkMinutes || 0), 0),
+      totalEmployees: sortedSummaryRows.length,
+      totalPresent,
+      totalAbsent,
+      totalLeave,
+      totalWeeklyOff,
+      totalHolidays,
+      totalHalfDays,
+      totalWorkMins: sortedSummaryRows.reduce((sum, r) => sum + (r.totalWorkMinutes || 0), 0),
     };
-  }, [summaryRows]);
+  }, [sortedSummaryRows, month, year]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">
@@ -815,7 +1171,17 @@ function AttendanceSheet() {
                   ? "text-emerald-600 bg-emerald-50"
                   : "text-slate-500 hover:text-emerald-600 hover:bg-slate-50"
               }`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                // Update URL when tab changes
+                if (tab.id === "import") {
+                  navigate("/attendance/import", { replace: true });
+                } else if (tab.id === "records") {
+                  navigate("/attendance/records", { replace: true });
+                } else {
+                  navigate("/attendance", { replace: true });
+                }
+              }}
             >
               <span className="text-lg">{tab.icon}</span>
               <span className="hidden sm:inline">{tab.label}</span>
@@ -849,6 +1215,109 @@ function AttendanceSheet() {
       {/* ---------- Tab 1: Monthly Report (All Employees) ---------- */}
       {activeTab === "monthly" && (
         <div className="space-y-4">
+          {/* Enhanced Guidance when no data uploaded */}
+          {!summaryLoading && !summaryError && sortedSummaryRows.length === 0 && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-6 shadow-sm mb-6">
+              <h3 className="text-xl font-bold text-blue-900 mb-3 flex items-center gap-2">
+                <span className="text-2xl">📤</span>
+                No Attendance Data Uploaded
+              </h3>
+              <p className="text-blue-800 mb-4 leading-relaxed">
+                Attendance data has not been uploaded for <strong>{MONTH_NAMES[month - 1]} {year}</strong>. 
+                Follow these steps to upload your attendance data:
+              </p>
+              <ol className="list-decimal list-inside space-y-3 text-blue-800 mb-4">
+                <li>
+                  <strong>Select a Biometric Device:</strong> Go to the <strong>"Import Attendance"</strong> tab 
+                  and select your biometric device from the dropdown.
+                </li>
+                <li>
+                  <strong>Download Template:</strong> Click the "Download Template" button to get an Excel template 
+                  pre-filled with your employees' codes and names.
+                </li>
+                <li>
+                  <strong>Fill the Template:</strong> Fill in the punch times (IN/OUT) for each employee and each day 
+                  according to your biometric device logs.
+                </li>
+                <li>
+                  <strong>Upload:</strong> Upload the filled template back to the system. The system will process 
+                  and import your attendance data.
+                </li>
+              </ol>
+              <div className="bg-white rounded-lg p-4 border border-blue-200 mt-4">
+                <p className="text-sm text-blue-900 font-medium mb-2">💡 Need Help?</p>
+                <p className="text-sm text-blue-800">
+                  If your biometric device produces data in a different format, check the template format guide 
+                  in the <strong>"Import Attendance"</strong> tab or contact our support team at{' '}
+                  <a 
+                    href="mailto:support@chandrahr.in?subject=Attendance Format Support"
+                    className="text-emerald-600 hover:text-emerald-700 underline font-medium"
+                  >
+                    support@chandrahr.in
+                  </a>
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setActiveTab("import");
+                  navigate("/attendance/import", { replace: true });
+                }}
+                className="mt-4 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg font-medium hover:from-emerald-600 hover:to-teal-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+              >
+                <span>📥</span>
+                Go to Import Attendance →
+              </button>
+            </div>
+          )}
+          {/* Device Filter and Sorting Controls */}
+          <div className="bg-white p-4 rounded-xl border shadow-sm mb-4">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Device Filter */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-600">Filter by Device:</label>
+                {summaryDevicesLoading ? (
+                  <span className="text-sm text-slate-500">Loading devices...</span>
+                ) : (
+                  <select
+                    value={selectedDeviceForSummary}
+                    onChange={(e) => setSelectedDeviceForSummary(e.target.value)}
+                    className="px-3 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm min-w-[200px]"
+                  >
+                    <option value="">All Devices</option>
+                    {summaryDevices.map(device => (
+                      <option key={device.id} value={device.id}>
+                        {device.deviceCode} {device.deviceName ? `- ${device.deviceName}` : ''}
+                        {device.isDefault ? ' ★' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              
+              {/* Sorting Controls */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-600">Sort by:</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="px-3 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                >
+                  <option value="present">Present Days</option>
+                  <option value="absent">Absent Days</option>
+                  <option value="name">Employee Name</option>
+                  <option value="empCode">Employee Code</option>
+                </select>
+                <button
+                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="px-3 py-2 border rounded-lg bg-white hover:bg-slate-50 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                  title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+                >
+                  {sortOrder === 'asc' ? '↑ Asc' : '↓ Desc'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 flex-wrap">
             <button 
               onClick={loadSummary} 
@@ -953,7 +1422,7 @@ function AttendanceSheet() {
                   </tr>
                 </thead>
                 <tbody>
-                  {summaryRows.length ? summaryRows.map((r, i) => (
+                  {sortedSummaryRows.length ? sortedSummaryRows.map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="border px-3 py-2 font-mono">{r.empCode}</td>
                       <td className="border px-3 py-2 font-medium">{r.empName || r.name}</td>
@@ -984,13 +1453,7 @@ function AttendanceSheet() {
                         </button>
                       </td>
                     </tr>
-                  )) : (
-                    <tr>
-                      <td className="border px-3 py-2 text-center text-gray-500" colSpan={13}>
-                        No attendance data found for {MONTH_NAMES[month - 1]} {year}. Import attendance first.
-                      </td>
-                    </tr>
-                  )}
+                  )) : null}
                 </tbody>
               </table>
             </div>
@@ -1070,6 +1533,18 @@ function AttendanceSheet() {
               Load Attendance
             </button>
             <button 
+              onClick={handleExportExcel} 
+              disabled={!selectedEmployee || inlineLogs.length === 0}
+              className={`px-4 py-2 rounded font-medium flex items-center gap-2 ${
+                selectedEmployee && inlineLogs.length > 0
+                  ? "bg-green-600 text-white hover:bg-green-700" 
+                  : "bg-gray-300 text-gray-500"
+              }`}
+              title="Export attendance logs to Excel"
+            >
+              📥 Export Excel
+            </button>
+            <button 
               onClick={handleRebuild}
               disabled={rebuilding || recalculating}
               className={`px-4 py-2 rounded font-medium flex items-center gap-2 ${
@@ -1117,7 +1592,7 @@ function AttendanceSheet() {
               </div>
               {/* Late/Early summary row */}
               {(logsSummary.lateDaysCount > 0 || logsSummary.earlyOutDays > 0) && (
-                <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-amber-200 bg-amber-50/50 -mx-4 px-4 py-2 -mb-4 rounded-b-lg">
+                <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-amber-200 bg-amber-50/50 -mx-4 px-4 py-2 rounded-b-lg">
                   {logsSummary.lateDaysCount > 0 && (
                     <span className="bg-amber-200 px-3 py-1 rounded-full text-amber-800">
                       🕐 <strong>{logsSummary.lateDaysCount}</strong> Days Late 
@@ -1128,6 +1603,38 @@ function AttendanceSheet() {
                     <span className="bg-pink-200 px-3 py-1 rounded-full text-pink-800">
                       ⏪ <strong>{logsSummary.earlyOutDays}</strong> Days Early 
                       <span className="ml-1">(<strong>{formatDuration(logsSummary.totalEarlyMins)}</strong> total)</span>
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* OT/Late/Early Deduction summary row - Always show if there's any data */}
+              {(attendanceTotals.totalOtDeductionMins !== 0 || attendanceTotals.totalLateDeductionMins > 0 || attendanceTotals.totalEarlyDeductionMins > 0 || inlineLogs.some(l => (l.otDeductionMins !== undefined && l.otDeductionMins !== 0) || (l.lateDeductionMins !== undefined && l.lateDeductionMins > 0) || (l.earlyDeductionMins !== undefined && l.earlyDeductionMins > 0))) && (
+                <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-purple-200 bg-purple-50/50 -mx-4 px-4 py-2 -mb-4 rounded-b-lg">
+                  {attendanceTotals.totalOtDeductionMins !== 0 && (
+                    <span className={`px-3 py-1 rounded-full ${
+                      attendanceTotals.totalOtDeductionMins > 0 
+                        ? 'bg-green-200 text-green-800' 
+                        : 'bg-red-200 text-red-800'
+                    }`}>
+                      {attendanceTotals.totalOtDeductionMins > 0 ? '⏰' : '⏱️'} 
+                      <strong> OT Deduction: </strong>
+                      {attendanceTotals.totalOtDeductionMins > 0 ? '+' : ''}
+                      {formatDuration(Math.abs(attendanceTotals.totalOtDeductionMins))}
+                      <span className="text-xs ml-1">({attendanceTotals.totalOtDeductionMins > 0 ? 'Earned' : 'Deducted'})</span>
+                    </span>
+                  )}
+                  {attendanceTotals.totalLateDeductionMins > 0 && (
+                    <span className="bg-red-200 px-3 py-1 rounded-full text-red-800">
+                      🕐 <strong>Late Deduction: </strong>
+                      {formatDuration(attendanceTotals.totalLateDeductionMins)}
+                      <span className="text-xs ml-1">(According to Salary/OT Rules)</span>
+                    </span>
+                  )}
+                  {attendanceTotals.totalEarlyDeductionMins > 0 && (
+                    <span className="bg-orange-200 px-3 py-1 rounded-full text-orange-800">
+                      ⏪ <strong>Early Checkout Deduction: </strong>
+                      {formatDuration(attendanceTotals.totalEarlyDeductionMins)}
+                      <span className="text-xs ml-1">(According to Salary/OT Rules)</span>
                     </span>
                   )}
                 </div>
@@ -1148,6 +1655,9 @@ function AttendanceSheet() {
                     <th className="border px-3 py-2 text-center">Work Hours</th>
                     <th className="border px-3 py-2 text-center">Status</th>
                     <th className="border px-3 py-2 text-center bg-amber-50">Late/Early</th>
+                    <th className="border px-3 py-2 text-center bg-green-50">OT Deduction</th>
+                    <th className="border px-3 py-2 text-center bg-red-50">Late Deduction</th>
+                    <th className="border px-3 py-2 text-center bg-orange-50">Early Deduction</th>
                     <th className="border px-3 py-2 text-center">Shift</th>
                     <th className="border px-3 py-2 text-left">All Punches</th>
                     <th className="border px-3 py-2 text-center">Issue</th>
@@ -1205,15 +1715,15 @@ function AttendanceSheet() {
                               {log.lastOut}
                               {log.crossedMidnight && <span className="text-xs text-purple-600 ml-1">(+1)</span>}
                             </>
-                          ) : log.missingPunchType === 'OUT' ? (
-                            <span className="text-orange-500 font-medium">Missing ⚠️</span>
+                          ) : log.missingPunch && log.missingPunchType === 'OUT' ? (
+                            <span className="text-orange-600 font-medium text-xs">⚠️ Missing OUT</span>
                           ) : '-'}
                         </td>
                         <td className="border px-3 py-2 text-center">{log.punchCount || 0}</td>
                         <td className="border px-3 py-2 text-center font-medium">{formatDuration(log.workMinutes)}</td>
                         <td className="border px-3 py-2 text-center">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            log.status === 'PRESENT' ? 'bg-green-100 text-green-800' :
+                            log.status === 'PRESENT' ? (log.missingPunch ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800') :
                             log.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
                             log.status === 'HALF_DAY' ? 'bg-yellow-100 text-yellow-800' :
                             log.status === 'LEAVE' ? 'bg-blue-100 text-blue-800' :
@@ -1225,6 +1735,7 @@ function AttendanceSheet() {
                             {log.status === 'WEEKLY_OFF' ? '🛌 WEEKLY OFF' : 
                              log.status === 'HOLIDAY' ? `🎉 ${log.holidayName || 'HOLIDAY'}` :
                              log.status === 'OT_DAY' ? '⏰ OVERTIME' :
+                             log.missingPunch && log.status === 'PRESENT' ? `⚠️ ${log.missingPunchType || 'MISSING PUNCH'}` :
                              log.status || 'ABSENT'}
                           </span>
                         </td>
@@ -1232,11 +1743,33 @@ function AttendanceSheet() {
                         <td className="border px-3 py-2 text-center">
                           <div className="flex flex-col items-center gap-1">
                             {log.lateIn && (
-                              <div className="flex flex-col items-center">
+                              <div className="flex flex-col items-center gap-1">
                                 {log.lateApproved ? (
-                                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
-                                    ✓ Late Approved
-                                  </span>
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                      ✓ Late Approved
+                                    </span>
+                                    <button
+                                      onClick={() => handleRevertLate(log.dayId, log.date)}
+                                      className="px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded hover:bg-gray-600"
+                                      title="Revert approval to pending"
+                                    >
+                                      Revert
+                                    </button>
+                                  </>
+                                ) : log.lateRejected ? (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800" title={`Rejected by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                      ✗ Late Rejected
+                                    </span>
+                                    <button
+                                      onClick={() => handleRevertLate(log.dayId, log.date)}
+                                      className="px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded hover:bg-gray-600"
+                                      title="Revert rejection to pending"
+                                    >
+                                      Revert
+                                    </button>
+                                  </>
                                 ) : (
                                   <>
                                     <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
@@ -1247,23 +1780,54 @@ function AttendanceSheet() {
                                         {log.firstIn} → <span className="text-amber-700 font-medium">{log.roundedIn}</span>
                                       </span>
                                     )}
-                                    <button
-                                      onClick={() => handleApproveLate(log.dayId, log.date)}
-                                      className="mt-1 px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
-                                      title="Approve late arrival - won't count in payroll"
-                                    >
-                                      Approve
-                                    </button>
+                                    <div className="flex gap-1 mt-1">
+                                      <button
+                                        onClick={() => handleApproveLate(log.dayId, log.date)}
+                                        className="px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
+                                        title="Approve late arrival - won't count in payroll"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectLate(log.dayId, log.date)}
+                                        className="px-2 py-0.5 text-[10px] bg-red-500 text-white rounded hover:bg-red-600"
+                                        title="Reject late arrival - will count in payroll"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
                                   </>
                                 )}
                               </div>
                             )}
                             {log.earlyOut && (
-                              <div className="flex flex-col items-center">
+                              <div className="flex flex-col items-center gap-1">
                                 {log.earlyOutApproved ? (
-                                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
-                                    ✓ Early Approved
-                                  </span>
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title={`Approved by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                      ✓ Early Approved
+                                    </span>
+                                    <button
+                                      onClick={() => handleRevertEarlyOut(log.dayId, log.date)}
+                                      className="px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded hover:bg-gray-600"
+                                      title="Revert approval to pending"
+                                    >
+                                      Revert
+                                    </button>
+                                  </>
+                                ) : log.earlyOutRejected ? (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800" title={`Rejected by ${log.approvedBy || 'Admin'}: ${log.approvalRemarks || ''}`}>
+                                      ✗ Early Rejected
+                                    </span>
+                                    <button
+                                      onClick={() => handleRevertEarlyOut(log.dayId, log.date)}
+                                      className="px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded hover:bg-gray-600"
+                                      title="Revert rejection to pending"
+                                    >
+                                      Revert
+                                    </button>
+                                  </>
                                 ) : (
                                   <>
                                     <span className="px-2 py-0.5 rounded text-xs font-medium bg-pink-100 text-pink-800">
@@ -1274,13 +1838,22 @@ function AttendanceSheet() {
                                         {log.lastOut} → <span className="text-pink-700 font-medium">{log.roundedOut}</span>
                                       </span>
                                     )}
-                                    <button
-                                      onClick={() => handleApproveEarlyOut(log.dayId, log.date)}
-                                      className="mt-1 px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
-                                      title="Approve early departure - won't count in payroll"
-                                    >
-                                      Approve
-                                    </button>
+                                    <div className="flex gap-1 mt-1">
+                                      <button
+                                        onClick={() => handleApproveEarlyOut(log.dayId, log.date)}
+                                        className="px-2 py-0.5 text-[10px] bg-green-500 text-white rounded hover:bg-green-600"
+                                        title="Approve early departure - won't count in payroll"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectEarlyOut(log.dayId, log.date)}
+                                        className="px-2 py-0.5 text-[10px] bg-red-500 text-white rounded hover:bg-red-600"
+                                        title="Reject early departure - will count in payroll"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
                                   </>
                                 )}
                               </div>
@@ -1291,6 +1864,43 @@ function AttendanceSheet() {
                             {!log.lateIn && !log.earlyOut && log.status !== 'PRESENT' && '-'}
                           </div>
                         </td>
+                        {/* OT Deduction column */}
+                        <td className="border px-3 py-2 text-center">
+                          {log.otDeductionMins !== undefined && log.otDeductionMins !== 0 ? (
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              log.otDeductionMins > 0 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {log.otDeductionMins > 0 ? '⏰ OT' : '⏱️ OT'} 
+                              {log.otDeductionMins > 0 ? '+' : ''}
+                              {formatDuration(Math.abs(log.otDeductionMins))}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
+                        {/* Late Deduction column */}
+                        <td className="border px-3 py-2 text-center">
+                          {log.lateDeductionMins !== undefined && log.lateDeductionMins > 0 ? (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                              🕐 Late {formatDuration(log.lateDeductionMins)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
+                        {/* Early Deduction column */}
+                        <td className="border px-3 py-2 text-center">
+                          {log.earlyDeductionMins !== undefined && log.earlyDeductionMins > 0 ? (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                              ⏪ Early {formatDuration(log.earlyDeductionMins)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
+                        {/* Shift column */}
                         <td className="border px-3 py-2 text-center">
                           {log.dualShift ? (
                             <span className="text-purple-600 font-medium text-xs">DUAL</span>
@@ -1298,8 +1908,15 @@ function AttendanceSheet() {
                             <span className="text-xs">{log.shiftCode || log.shifts?.[0] || '-'}</span>
                           )}
                         </td>
+                        {/* All Punches column */}
                         <td className="border px-3 py-2 text-xs text-gray-600">
-                          {log.punches?.join(', ') || '-'}
+                          {log.punchTime && log.punchTime.length > 0 ? (
+                            <span className="font-mono">{log.punchTime.join(', ')}</span>
+                          ) : log.punches && log.punches.length > 0 ? (
+                            <span className="font-mono">{log.punches.join(', ')}</span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td className="border px-3 py-2 text-center">
                           {log.highlightReason ? (
@@ -1319,7 +1936,7 @@ function AttendanceSheet() {
                           {(log.missingPunch || log.needsReview || log.punchCount === 1 || log.manualIn || log.manualOut) ? (
                             <button
                               onClick={() => openPunchModal(log)}
-                              className={`px-2 py-1 text-xs rounded ${
+                              className={`px-2 py-1 text-xs rounded font-medium ${
                                 log.missingPunch 
                                   ? 'bg-orange-500 text-white hover:bg-orange-600' 
                                   : (log.manualIn || log.manualOut)
@@ -1356,44 +1973,42 @@ function AttendanceSheet() {
 
       {/* ---------- Tab 3: Import Attendance ---------- */}
       {activeTab === "import" && (
-        <div className="space-y-6">
-          {/* Existing Batch Alert for Selected Month */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Import Steps */}
+          <div className="lg:col-span-2 space-y-6">
+          {/* Existing batch info: multiple uploads allowed; data will be merged, no duplicates */}
           {existingBatchForMonth && (
-            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-6 shadow-sm">
+            <div className="bg-blue-50 border border-blue-300 rounded-2xl p-6 shadow-sm">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
                   <span className="text-2xl">📁</span>
                   <div>
-                    <h3 className="font-bold text-amber-800">
-                      Attendance Already Uploaded for {MONTH_NAMES[month-1]} {year}
+                    <h3 className="font-bold text-blue-800">
+                      Attendance already uploaded for {MONTH_NAMES[month-1]} {year}
                     </h3>
-                    <p className="text-amber-700 text-sm mt-1">
+                    <p className="text-blue-700 text-sm mt-1">
                       Batch #{existingBatchForMonth.id} was uploaded on {new Date(existingBatchForMonth.uploadedAt).toLocaleString()} 
                       by {existingBatchForMonth.uploadedBy || 'admin'}
                     </p>
                     <div className="flex items-center gap-4 mt-2 text-sm">
-                      <span className="text-emerald-700">✓ {existingBatchForMonth.successRows} records imported</span>
+                      <span className="text-emerald-700">✓ {existingBatchForMonth.successRows} records in this batch</span>
                       {existingBatchForMonth.errorRows > 0 && (
                         <span className="text-red-600">✗ {existingBatchForMonth.errorRows} errors</span>
                       )}
                     </div>
+                    <p className="text-blue-600 text-sm mt-3 font-medium">
+                      You can upload again for this period. New data will be merged; duplicates for the same employee and time will not be created.
+                    </p>
                   </div>
                 </div>
                 <button
                   onClick={() => handleDeleteBatch(existingBatchForMonth.id, existingBatchForMonth.month, existingBatchForMonth.year)}
                   disabled={deleting}
-                  className={`px-4 py-2 rounded-xl font-medium text-sm transition-all ${
-                    deleting 
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-red-500 text-white hover:bg-red-600 shadow-md hover:shadow-lg'
-                  }`}
+                  className="px-4 py-2 rounded-xl font-medium text-sm bg-slate-200 text-slate-700 hover:bg-slate-300"
                 >
-                  {deleting ? 'Deleting...' : '🗑️ Delete & Re-upload'}
+                  {deleting ? 'Deleting...' : '🗑️ Delete batch'}
                 </button>
               </div>
-              <p className="text-amber-600 text-xs mt-3">
-                ⚠️ To upload new attendance for this period, first delete the existing batch.
-              </p>
             </div>
           )}
 
@@ -1492,14 +2107,22 @@ function AttendanceSheet() {
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             {batch.errorRows > 0 && (
-                              <a
-                                href={`${API_BASE}/attendance/import/batches/${batch.id}/errors.csv`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded hover:bg-slate-200"
-                              >
+                              <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await downloadWithAuth(
+                                          `${API_BASE}/attendance/import/batches/${batch.id}/errors.csv`,
+                                          `import_errors_batch_${batch.id}.csv`
+                                        );
+                                      } catch (e) {
+                                        alert("Download failed: " + (e.message || "Please try again."));
+                                      }
+                                    }}
+                                    className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded hover:bg-slate-200 cursor-pointer"
+                                  >
                                 📥 Errors
-                              </a>
+                              </button>
                             )}
                             <button
                               onClick={() => handleDeleteBatch(batch.id, batch.month, batch.year)}
@@ -1522,8 +2145,7 @@ function AttendanceSheet() {
           )}
 
           {/* Progress Indicator */}
-          {!existingBatchForMonth && (
-            <div className="bg-white rounded-2xl shadow-sm border p-4">
+          <div className="bg-white rounded-2xl shadow-sm border p-4">
               <div className="flex items-center justify-center gap-4">
                 <div className={`flex items-center gap-2 ${importStep === 'upload' ? 'text-emerald-600' : 'text-slate-400'}`}>
                   <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
@@ -1549,44 +2171,76 @@ function AttendanceSheet() {
                 </div>
               </div>
             </div>
-          )}
 
           {/* Step 1: Upload */}
-          {importStep === 'upload' && !existingBatchForMonth && (
+          {importStep === 'upload' && (
             <>
-              {/* Download Sample Template - STATIC Excel file with REAL attendance data */}
+              {/* Device Selection - REQUIRED before template download */}
+              <div className="mb-4 p-4 bg-emerald-50 rounded-lg border-2 border-emerald-300">
+                <label className="block text-sm font-bold text-emerald-800 mb-2">
+                  <span className="text-lg mr-1">📟</span> 
+                  Step 0: Select Biometric Device (Required)
+                </label>
+                {devicesLoading ? (
+                  <p className="text-sm text-slate-500">Loading devices...</p>
+                ) : devices.length === 0 ? (
+                  <p className="text-sm text-amber-600">⚠️ No biometric devices found. Please create a device first.</p>
+                ) : (
+                  <>
+                    <select
+                      value={selectedDeviceId}
+                      onChange={(e) => {
+                        const deviceId = e.target.value;
+                        setSelectedDeviceId(deviceId);
+                        const device = devices.find(d => String(d.id) === deviceId);
+                        setSelectedDeviceCode(device ? device.deviceCode : '');
+                        // Reset detected device when manually changing
+                        setDetectedDevice(null);
+                      }}
+                      disabled={devices.length === 1}
+                      className={`w-full px-3 py-2 border-2 border-emerald-400 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${devices.length === 1 ? 'bg-emerald-50 cursor-not-allowed' : 'bg-white'}`}
+                    >
+                      <option value="">-- Select a biometric device --</option>
+                      {devices.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.deviceCode} {d.deviceName ? `- ${d.deviceName}` : ''} 
+                          {d.isDefault ? ' ★ Default' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {devices.length === 1 ? (
+                      <p className="text-xs text-emerald-700 mt-2 font-medium">
+                        ✅ Auto-selected: {selectedDeviceCode || devices[0]?.deviceCode}. Only one device configured.
+                      </p>
+                    ) : selectedDeviceId ? (
+                      <p className="text-xs text-emerald-700 mt-2 font-medium">
+                        ✅ Device selected: {selectedDeviceCode}. Now download template or upload attendance file.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-600 mt-2">
+                        ⚠️ Please select a device first. The template will include employees assigned to this device.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Download Dynamic Template - Generated based on selected device */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-sm border-2 border-blue-200 p-6">
                 <h3 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📋</span>
-                  Step 1: Download Sample Template
+                  Step 1: Download Attendance Template
                 </h3>
                 <p className="text-blue-700 text-sm mb-4">
-                  Download a <strong>sample template</strong> with real attendance data format from biometric machine.
-                  Use this format to prepare your attendance file.
-                </p>
-                <a 
-                  href={`${API_BASE}/attendance/template/sample`}
-                  download="attendance_sample_template.xlsx"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg"
-                >
-                  📥 Download Sample Template (Excel)
-                </a>
-                <p className="text-xs text-blue-600 mt-3">
-                  💡 This sample shows the exact format from a real biometric machine export.
-                </p>
-              </div>
-
-              {/* OR - Download Empty Template for Your Employees */}
-              <div className="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <span className="text-2xl">📝</span>
-                  OR: Download Empty Template (Your Employees)
-                </h3>
-                <p className="text-slate-600 text-sm mb-4">
-                  Download an empty template for <strong>{MONTH_NAMES[month-1]} {year}</strong> pre-filled with your employee list.
+                  Download a template for <strong>{MONTH_NAMES[month-1]} {year}</strong> with employees assigned to your selected biometric device.
                   {selectedDeviceId && selectedDeviceCode && (
-                    <span className="text-emerald-700 font-medium"> for device: {selectedDeviceCode}</span>
+                    <span className="block mt-2 text-emerald-700 font-medium">
+                      📟 Device: {selectedDeviceCode}
+                    </span>
                   )}
+                </p>
+                <p className="text-blue-600 text-xs mb-4">
+                  💡 The template lists your employees; existing attendance in the system is pre-filled where available. Add or edit punch times (IN/OUT) and upload. You can upload multiple times—duplicates are avoided automatically.
                 </p>
                 <button 
                   onClick={handleDownloadTemplate}
@@ -1594,7 +2248,7 @@ function AttendanceSheet() {
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
                     downloadingTemplate || !selectedDeviceId
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg'
+                      : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:shadow-lg'
                   }`}
                 >
                   {downloadingTemplate ? (
@@ -1605,12 +2259,12 @@ function AttendanceSheet() {
                   ) : !selectedDeviceId ? (
                     <>🔒 Select Device First</>
                   ) : (
-                    <>📝 Download Empty Template for {selectedDeviceCode}</>
+                    <>📥 Download Template for {selectedDeviceCode}</>
                   )}
                 </button>
                 {!selectedDeviceId && (
                   <p className="text-xs text-amber-600 mt-2">
-                    ⚠️ Select a biometric device above to download the empty template.
+                    ⚠️ Please select a biometric device above to download the template.
                   </p>
                 )}
               </div>
@@ -1619,58 +2273,8 @@ function AttendanceSheet() {
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <span className="text-2xl">📤</span>
-                  Step 2: Upload Biometric File
+                  Step 2: Upload Attendance File
                 </h3>
-                
-                {/* Device Selection - MANDATORY before import */}
-                <div className="mb-4 p-4 bg-emerald-50 rounded-lg border-2 border-emerald-300">
-                  <label className="block text-sm font-bold text-emerald-800 mb-2">
-                    <span className="text-lg mr-1">📟</span> 
-                    Step 0: Select Biometric Device (Required)
-                  </label>
-                  {devicesLoading ? (
-                    <p className="text-sm text-slate-500">Loading devices...</p>
-                  ) : devices.length === 0 ? (
-                    <p className="text-sm text-amber-600">⚠️ No biometric devices found. Please create a device first.</p>
-                  ) : (
-                    <>
-                      <select
-                        value={selectedDeviceId}
-                        onChange={(e) => {
-                          const deviceId = e.target.value;
-                          setSelectedDeviceId(deviceId);
-                          const device = devices.find(d => String(d.id) === deviceId);
-                          setSelectedDeviceCode(device ? device.deviceCode : '');
-                          // Reset detected device when manually changing
-                          setDetectedDevice(null);
-                        }}
-                        disabled={devices.length === 1}
-                        className={`w-full px-3 py-2 border-2 border-emerald-400 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${devices.length === 1 ? 'bg-emerald-50 cursor-not-allowed' : 'bg-white'}`}
-                      >
-                        <option value="">-- Select a biometric device --</option>
-                        {devices.map(d => (
-                          <option key={d.id} value={d.id}>
-                            {d.deviceCode} {d.deviceName ? `- ${d.deviceName}` : ''} 
-                            {d.isDefault ? ' ★ Default' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      {devices.length === 1 ? (
-                        <p className="text-xs text-emerald-700 mt-2 font-medium">
-                          ✅ Auto-selected: {selectedDeviceCode || devices[0]?.deviceCode}. Only one device configured.
-                        </p>
-                      ) : selectedDeviceId ? (
-                        <p className="text-xs text-emerald-700 mt-2 font-medium">
-                          ✅ Device selected: {selectedDeviceCode}. Now download template or upload attendance file.
-                        </p>
-                      ) : (
-                        <p className="text-xs text-amber-600 mt-2">
-                          ⚠️ Please select a device first. The template will include employees assigned to this device.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
                 
                 {/* Show detected device from uploaded file */}
                 {detectedDevice && (
@@ -1680,9 +2284,17 @@ function AttendanceSheet() {
                     </p>
                     {String(detectedDevice.deviceId) !== selectedDeviceId && (
                       <p className="text-xs text-amber-600 mt-1">
-                        ⚠️ Selected device doesn't match file. Device from file will be used.
+                        ⚠️ Selected device doesn't match file. Please select the correct device or download a new template.
                       </p>
                     )}
+                  </div>
+                )}
+                
+                {!selectedDeviceId && (
+                  <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-300">
+                    <p className="text-sm text-red-800">
+                      ⚠️ <strong>Device selection required:</strong> Please select a biometric device above before uploading.
+                    </p>
                   </div>
                 )}
                 
@@ -2000,6 +2612,13 @@ function AttendanceSheet() {
                   </div>
                 )}
 
+                {/* Overlap warning when batches already exist for this period */}
+                {previewData.overlapWarning && previewData.existingBatchesCount > 0 && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-sm">
+                    <strong>ℹ️ Merge upload:</strong> {previewData.existingBatchesCount} batch(es) already exist for this period. New records will be merged; duplicates for the same employee and time will not be created.
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-4 justify-end">
                   <button 
@@ -2061,14 +2680,22 @@ function AttendanceSheet() {
                 <p className="text-slate-600 mb-4">{importResult.message}</p>
                 
                 {importResult.errorsCsvUrl && (
-                  <a 
-                    className="text-blue-600 underline hover:text-blue-800 text-sm" 
-                    href={`${API_BASE}${importResult.errorsCsvUrl}`} 
-                    target="_blank" 
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await downloadWithAuth(
+                          `${API_BASE}${importResult.errorsCsvUrl}`,
+                          `import_errors_batch_${importResult.batchId || "unknown"}.csv`
+                        );
+                      } catch (e) {
+                        alert("Download failed: " + (e.message || "Please try again."));
+                      }
+                    }}
+                    className="text-blue-600 underline hover:text-blue-800 text-sm bg-transparent border-0 cursor-pointer p-0"
                   >
                     📥 Download Error Details (CSV)
-                  </a>
+                  </button>
                 )}
               </div>
 
@@ -2091,6 +2718,16 @@ function AttendanceSheet() {
               </div>
             </div>
           )}
+          </div>
+          
+          {/* Right Column: Template Sample Display */}
+          <div className="lg:col-span-1">
+            <TemplateSampleDisplay 
+              month={month} 
+              year={year} 
+              selectedDeviceCode={selectedDeviceCode || "DEFAULT"}
+            />
+          </div>
         </div>
       )}
 

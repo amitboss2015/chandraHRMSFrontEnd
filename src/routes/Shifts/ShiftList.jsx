@@ -1,14 +1,6 @@
 // ShiftList.jsx - Modern shift management UI
 import React, { useMemo, useState, useEffect } from "react";
-
-const getApiBase = () => {
-  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
-  return '/api';
-};
-const API_BASE = getApiBase();
+import { API_BASE } from "../../utils/apiConfig";
 
 const getTenantId = () =>
   localStorage.getItem("hrms_tenant_id") || "SASA001";
@@ -140,8 +132,10 @@ export default function ShiftList() {
     try {
       if (editing) {
         await apiSend(`${API_BASE}/shifts/${encodeURIComponent(editing.code)}`, "PUT", payload);
+        alert("✅ Shift updated successfully!\n\n🔄 Recalculating attendance and payroll in the background...\nThis may take a few moments.");
       } else {
         await apiSend(`${API_BASE}/shifts`, "POST", payload);
+        alert("✅ Shift created successfully!");
       }
       setShowModal(false);
       loadShifts();

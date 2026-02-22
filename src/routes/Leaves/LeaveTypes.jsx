@@ -13,7 +13,7 @@ const CF_BEHAVS = ["NONE", "ACCUMULATE_TO_ANNUAL", "ROLLOVER_MONTH", "EXPIRE"];
 const CONSUME = ["MONTHLY_THEN_ANNUAL", "ANNUAL_THEN_MONTHLY"];
 const MIN_UNITS = ["DAY", "HALF", "HOUR"];
 
-export default function LeaveTypes({ orgId: propOrgId }) {
+export default function LeaveTypes({ orgId: propOrgId, onLeaveTypeCreated }) {
   const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
 
   const [rows, setRows] = useState([]);
@@ -71,10 +71,15 @@ export default function LeaveTypes({ orgId: propOrgId }) {
     const payload = { ...form, orgId };
     if (!payload.code || !payload.name) return alert("Code and Name are required");
     try {
+      const isNew = !editing;
       editing ? await updateLeaveType(editing.id, payload) : await createLeaveType(payload);
       setEditing(null);
       setShowEditor(false);
       await refresh();
+      // Notify parent to refresh setup status if a new leave type was created
+      if (isNew && onLeaveTypeCreated) {
+        onLeaveTypeCreated();
+      }
     } catch (e) {
       alert(e.message || "Failed to save");
     }

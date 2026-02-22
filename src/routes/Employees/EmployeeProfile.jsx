@@ -3,14 +3,7 @@
 import React, { useMemo, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-const getApiBase = () => {
-  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
-  return '/api';
-};
-const API_BASE = getApiBase();
+import { API_BASE } from "../../utils/apiConfig";
 
 const getToken = () =>
   sessionStorage.getItem("hrms_access_token") || localStorage.getItem("token") ||
@@ -288,7 +281,7 @@ export default function EmployeeProfile() {
                   value={`₹${Number(emp.base_salary || 0).toLocaleString("en-IN")}`}
                 />
                 <InfoRow
-                  label="Increment"
+                  label="Allowance"
                   value={`₹${Number(emp.increment || 0).toLocaleString("en-IN")}`}
                 />
                 <InfoRow

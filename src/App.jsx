@@ -107,6 +107,8 @@ function App() {
                     <Route path="/shifts/assign" element={<ShiftAssign />} />
                     <Route path="/leaves/*" element={<LeaveManagement />} />
                     <Route path="/attendance" element={<AttendanceSheet />} />
+                    <Route path="/attendance/import" element={<AttendanceSheet />} />
+                    <Route path="/attendance/records" element={<AttendanceSheet />} />
                     <Route path="/attendance/logs" element={<AttendanceLogs />} />
                     <Route path="/attendance/missing-punch" element={<MissingPunchDashboard />} />
                    
@@ -131,6 +133,7 @@ function App() {
                     <Route path="/admin/devices" element={<SuperAdminDashboard tab="devices" />} />
                     <Route path="/admin/fraud" element={<SuperAdminDashboard tab="fraud" />} />
                     <Route path="/admin/maintenance" element={<SuperAdminDashboard tab="maintenance" />} />
+                    <Route path="/admin/custom-formats" element={<SuperAdminDashboard tab="custom-formats" />} />
                   </Routes>
                 </MainLayout>
               </ProtectedRoute>

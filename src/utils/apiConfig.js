@@ -1,26 +1,18 @@
-// Centralized API configuration
-// This file provides the API base URL that works on both localhost and network access
+// Centralized API configuration - URL-agnostic (works for localhost, ngrok, chandrahr.in)
+// Uses hostname so same build works everywhere. VITE_API_BASE_URL overrides when set.
+
+const trimTrailingSlash = (s) => (s || '').replace(/\/+$/, '');
 
 export const getApiBase = () => {
-  // Check for environment variable first
   if (import.meta.env?.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '');
+    return trimTrailingSlash(import.meta.env.VITE_API_BASE_URL);
   }
-  
-  // Check localStorage override
-  if (localStorage.getItem('baseUrl')) {
-    return localStorage.getItem('baseUrl').replace(/\/+$/, '');
-  }
-  
-  // Dynamic detection based on hostname
-  const hostname = window.location.hostname;
+  // Use relative /api for all hosts - Vite proxies in dev, nginx in prod, ngrok tunnels to same origin
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080/api';
+    return 'http://localhost:8080/api'; // Direct to backend when on same machine
   }
-  
-  // For production (any domain or IP), use relative path
-  // Nginx will proxy /api/* to the backend
-  return '/api';
+  return '/api'; // ngrok, chandrahr.in, etc. - same-origin, proxied
 };
 
 export const API_BASE = getApiBase();

@@ -1,6 +1,7 @@
 // src/routes/Leaves/LeaveReports.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { listEmployees } from "./api";
+import { usePeriodSelection } from "../../utils/monthYearState";
 
 const getApiBase = () => {
   if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
@@ -24,23 +25,31 @@ const authHeaders = () => {
 
 export default function LeaveReports({ orgId: propOrgId }) {
   const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
+  
+  // Use shared month/year selection
+  const { month, year } = usePeriodSelection();
 
   const [reportType, setReportType] = useState("date-range"); // date-range | employee | daily
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Date range filters
+  // Date range filters - default to selected month/year
   const [fromDate, setFromDate] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
+    const d = new Date(year, month - 1, 1);
     return d.toISOString().split("T")[0];
   });
   const [toDate, setToDate] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(0);
+    const d = new Date(year, month, 0);
     return d.toISOString().split("T")[0];
   });
+
+  // Update date range when month/year changes
+  useEffect(() => {
+    const start = new Date(year, month - 1, 1).toISOString().split("T")[0];
+    const end = new Date(year, month, 0).toISOString().split("T")[0];
+    setFromDate(start);
+    setToDate(end);
+  }, [month, year]);
 
   // Employee filter
   const [employees, setEmployees] = useState([]);
@@ -49,6 +58,8 @@ export default function LeaveReports({ orgId: propOrgId }) {
 
   // Report data
   const [reportData, setReportData] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [processingId, setProcessingId] = useState(null);
 
   // Load employees
   useEffect(() => {
@@ -140,6 +151,107 @@ export default function LeaveReports({ orgId: propOrgId }) {
         break;
       default:
         break;
+    }
+  };
+
+  // Delete leave
+  const handleDeleteLeave = async (leaveId) => {
+    if (!confirm("Are you sure you want to delete this leave?")) return;
+    
+    setDeletingId(leaveId);
+    try {
+      const res = await fetch(`${API_BASE}/leave/admin/${leaveId}`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to delete leave");
+      }
+      // Refresh the report after deletion
+      handleGenerateReport();
+    } catch (e) {
+      alert("Error deleting leave: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Approve leave
+  const handleApproveLeave = async (leaveId) => {
+    const remarks = prompt("Enter approval remarks (optional):");
+    if (remarks === null) return; // User cancelled
+    
+    setProcessingId(leaveId);
+    try {
+      const url = `${API_BASE}/leave/admin/${leaveId}/approve${remarks ? `?remarks=${encodeURIComponent(remarks)}` : ''}`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to approve leave");
+      }
+      // Refresh the report after approval
+      handleGenerateReport();
+    } catch (e) {
+      alert("Error approving leave: " + e.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Reject leave
+  const handleRejectLeave = async (leaveId) => {
+    const remarks = prompt("Enter rejection reason (required):");
+    if (!remarks || remarks.trim() === "") {
+      alert("Rejection reason is required");
+      return;
+    }
+    
+    setProcessingId(leaveId);
+    try {
+      const url = `${API_BASE}/leave/admin/${leaveId}/reject?remarks=${encodeURIComponent(remarks)}`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to reject leave");
+      }
+      // Refresh the report after rejection
+      handleGenerateReport();
+    } catch (e) {
+      alert("Error rejecting leave: " + e.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Edit leave (redirect to mark leave page with pre-filled data)
+  const handleEditLeave = (leave) => {
+    // Store leave data in sessionStorage for pre-filling
+    const editData = {
+      id: leave.id,
+      empId: leave.empId,
+      leaveTypeId: leave.leaveTypeId,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      durationKind: leave.durationKind,
+      totalDays: leave.totalDays,
+      remarks: leave.remarks || "",
+      payable: leave.payable !== undefined ? leave.payable : true
+    };
+    sessionStorage.setItem("editLeaveData", JSON.stringify(editData));
+    // Navigate to mark leave page
+    // Check if we're using React Router or direct navigation
+    if (window.location.pathname.includes('/leaves')) {
+      window.location.href = "/leaves/mark";
+    } else {
+      // Try to navigate using React Router if available
+      window.location.href = "/leaves/mark";
     }
   };
 
@@ -351,51 +463,108 @@ export default function LeaveReports({ orgId: propOrgId }) {
                     <th className="text-left p-3 font-medium text-slate-600">Duration</th>
                     <th className="text-left p-3 font-medium text-slate-600">Status</th>
                     <th className="text-left p-3 font-medium text-slate-600">Remarks</th>
+                    <th className="text-center p-3 font-medium text-slate-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(reportData.data || []).length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-8 text-slate-500">
+                      <td colSpan={reportData.type === "date-range" ? 10 : 9} className="text-center py-8 text-slate-500">
                         No leave records found for the selected period.
                       </td>
                     </tr>
                   ) : (
-                    (reportData.data || []).map((leave, idx) => (
-                      <tr key={leave.id || idx} className="hover:bg-slate-50">
-                        {reportData.type === "date-range" && (
-                          <>
-                            <td className="p-3 font-medium text-slate-800">{leave.empId || leave.empCode}</td>
-                            <td className="p-3 text-slate-600">{leave.empName}</td>
-                          </>
-                        )}
-                        <td className="p-3">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                            {leave.leaveTypeCode || leave.leaveTypeName}
-                          </span>
-                        </td>
-                        <td className="p-3 text-slate-600">{leave.startDate}</td>
-                        <td className="p-3 text-slate-600">{leave.endDate}</td>
-                        <td className="p-3 text-center font-medium">{leave.totalDays}</td>
-                        <td className="p-3 text-slate-600 text-xs">{leave.durationKind}</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              leave.status === "APPROVED"
-                                ? "bg-green-100 text-green-700"
-                                : leave.status === "PENDING"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : leave.status === "REJECTED"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
-                            }`}
-                          >
-                            {leave.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-slate-500 truncate max-w-xs">{leave.remarks || "-"}</td>
-                      </tr>
-                    ))
+                    (reportData.data || []).map((leave, idx) => {
+                      const canDelete = leave.canDelete !== false; // Default to true if not provided (backward compatibility)
+                      const canModify = leave.canModify !== false; // Default to true if not provided
+                      
+                      return (
+                        <tr key={leave.id || idx} className="hover:bg-slate-50">
+                          {reportData.type === "date-range" && (
+                            <>
+                              <td className="p-3 font-medium text-slate-800">{leave.empId || leave.empCode}</td>
+                              <td className="p-3 text-slate-600">{leave.empName}</td>
+                            </>
+                          )}
+                          <td className="p-3">
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                              {leave.leaveTypeCode || leave.leaveTypeName}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-600">{leave.startDate}</td>
+                          <td className="p-3 text-slate-600">{leave.endDate}</td>
+                          <td className="p-3 text-center font-medium">{leave.totalDays}</td>
+                          <td className="p-3 text-slate-600 text-xs">{leave.durationKind}</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                leave.status === "APPROVED"
+                                  ? "bg-green-100 text-green-700"
+                                  : leave.status === "PENDING"
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : leave.status === "REJECTED"
+                                  ? "bg-red-100 text-red-700"
+                                  : leave.status === "REVIEW"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              {leave.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-500 truncate max-w-xs">{leave.remarks || "-"}</td>
+                          <td className="p-3">
+                            <div className="flex items-center justify-center gap-2 flex-wrap">
+                              {leave.status === "REVIEW" ? (
+                                <>
+                                  <button
+                                    onClick={() => handleApproveLeave(leave.id)}
+                                    disabled={processingId === leave.id}
+                                    className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded transition-colors disabled:opacity-50"
+                                    title="Approve Leave"
+                                  >
+                                    {processingId === leave.id ? "..." : "✅ Approve"}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectLeave(leave.id)}
+                                    disabled={processingId === leave.id}
+                                    className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded transition-colors disabled:opacity-50"
+                                    title="Reject Leave"
+                                  >
+                                    {processingId === leave.id ? "..." : "❌ Reject"}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  {canModify && (
+                                    <button
+                                      onClick={() => handleEditLeave(leave)}
+                                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                                      title="Edit Leave"
+                                    >
+                                      ✏️ Edit
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => handleDeleteLeave(leave.id)}
+                                      disabled={deletingId === leave.id}
+                                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded transition-colors disabled:opacity-50"
+                                      title="Delete Leave"
+                                    >
+                                      {deletingId === leave.id ? "..." : "🗑️ Delete"}
+                                    </button>
+                                  )}
+                                  {!canDelete && !canModify && (
+                                    <span className="text-xs text-slate-400 italic">Locked</span>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

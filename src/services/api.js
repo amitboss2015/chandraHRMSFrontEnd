@@ -3,44 +3,33 @@
 // Multi-tenant enabled
 // ===========================
 
-// Dynamically set API base URL based on current host
-const getApiBase = () => {
-  const hostname = window.location.hostname;
-  const protocol = window.location.protocol;
-  
-  // For localhost development, use port 8080 directly
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080/api';
-  }
-  
-  // For production (any domain including IP), use relative path
-  // Nginx will proxy /api/* to the backend
-  return '/api';
-};
-
-const API_BASE = getApiBase();
+import { API_BASE } from '../utils/apiConfig';
 // Don't use a default orgId - let backend resolve from TenantContext (JWT)
 const DEFAULT_ORG_ID = '';
 
 /**
  * Get current tenant ID from:
- * 1. Local storage (if set by admin)
- * 2. URL subdomain (for production)
+ * 1. Local storage (set after login)
+ * 2. URL subdomain (only for known SaaS domains like *.chandrahr.in)
  * 3. Default fallback
+ * Does NOT treat ngrok, localhost, or IP as tenant subdomains.
  */
 function getCurrentTenantId() {
-  // Check local storage first (for development/admin override)
   const storedTenant = localStorage.getItem('hrms_tenant_id');
   if (storedTenant) return storedTenant;
   
-  // Try to extract from subdomain (production)
   const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return DEFAULT_ORG_ID;
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) return DEFAULT_ORG_ID;
+  if (hostname.includes('ngrok')) return DEFAULT_ORG_ID;
+  if (hostname === 'chandrahr.in' || hostname === 'www.chandrahr.in') return DEFAULT_ORG_ID;
+  
+  // Only extract subdomain for known SaaS domain (*.chandrahr.in, *.hrms.in)
   const parts = hostname.split('.');
-  if (parts.length >= 2) {
-    const subdomain = parts[0].toLowerCase();
-    // Skip common non-tenant subdomains
-    if (!['www', 'api', 'admin', 'app', 'localhost', '127'].includes(subdomain)) {
-      return subdomain;
+  if (parts.length >= 3 && !['www'].includes(parts[0])) {
+    const baseDomain = parts.slice(-2).join('.');
+    if (baseDomain === 'chandrahr.in' || baseDomain === 'hrms.in') {
+      return parts[0].toUpperCase();
     }
   }
   
@@ -263,6 +252,8 @@ export const loanApi = {
   
   cancel: (id) => fetchApi(`${API_BASE}/loans/${id}`, { method: 'DELETE' }),
   
+  delete: (id) => fetchApi(`${API_BASE}/loans/${id}/delete`, { method: 'DELETE' }),
+  
   getEmiSchedule: (loanId) => fetchApi(`${API_BASE}/loans/${loanId}/schedule`),
   
   getEmployeeEmiTotal: (empId, orgId = DEFAULT_ORG_ID) => 
@@ -388,6 +379,12 @@ export const payrollApi = {
       body: JSON.stringify({ amount, remarks }) 
     }),
   
+  adjustLoan: (id, loanAmount, remarks = '') => 
+    fetchApi(`${API_BASE}/payroll/${id}/adjust-loan`, { 
+      method: 'PUT', 
+      body: JSON.stringify({ loanAmount, remarks }) 
+    }),
+  
   // Approval
   approve: (id, approvedBy = '') => 
     fetchApi(`${API_BASE}/payroll/${id}/approve?approvedBy=${approvedBy}`, { method: 'POST' }),
@@ -410,6 +407,31 @@ export const payrollApi = {
   
   deleteMonthly: (year, month, orgId = DEFAULT_ORG_ID) => 
     fetchApi(`${API_BASE}/payroll?orgId=${orgId}&year=${year}&month=${month}`, { method: 'DELETE' }),
+  
+  // Export
+  exportExcel: async (year, month, orgId = DEFAULT_ORG_ID) => {
+    const tenantId = getCurrentTenantId();
+    const accessToken = getAccessToken();
+    
+    const headers = { 
+      'X-Tenant-Id': tenantId,
+    };
+    
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    
+    const response = await fetch(`${API_BASE}/payroll/export?orgId=${orgId}&year=${year}&month=${month}`, {
+      method: 'GET',
+      headers: headers,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.statusText}`);
+    }
+    
+    return await response.blob();
+  },
 };
 
 // =========== HOLIDAYS ===========

@@ -22,7 +22,8 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
     'fraud': 'highrisk',
     'maintenance': 'maintenance',
     'highrisk': 'highrisk',
-    'duplicates': 'duplicates'
+    'duplicates': 'duplicates',
+    'custom-formats': 'custom-formats'
   };
   const [activeTab, setActiveTab] = useState(tabMapping[tab] || 'overview');
   const [statusFilter, setStatusFilter] = useState('');
@@ -40,6 +41,10 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [confirmText, setConfirmText] = useState('');
+  
+  // Custom Format Submissions State
+  const [customFormats, setCustomFormats] = useState([]);
+  const [loadingFormats, setLoadingFormats] = useState(false);
 
   // Fetch helper
   const fetchApi = useCallback(async (endpoint, options = {}) => {
@@ -104,8 +109,24 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   useEffect(() => {
     if (activeTab === 'companies') {
       loadCompanyData();
+    } else if (activeTab === 'custom-formats') {
+      loadCustomFormats();
     }
   }, [activeTab, loadCompanyData]);
+
+  // Load custom format submissions
+  const loadCustomFormats = useCallback(async () => {
+    try {
+      setLoadingFormats(true);
+      const data = await fetchApi('/api/admin/custom-formats?limit=100');
+      setCustomFormats(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load custom formats:', err);
+      setCustomFormats([]);
+    } finally {
+      setLoadingFormats(false);
+    }
+  }, [fetchApi]);
 
   // Filter trials
   const filteredTrials = statusFilter 
@@ -290,6 +311,32 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
     }
   };
 
+  // Reject and delete a pending registration (removes from list)
+  const rejectPendingRegistration = async (registration) => {
+    const { id, companyName, adminEmail } = registration;
+    if (!confirm(`Reject and delete this registration?\n\nCompany: ${companyName || 'N/A'}\nEmail: ${adminEmail}\n\nThis will permanently remove the entry. They can register again if needed.`)) {
+      return;
+    }
+
+    const loadingKey = `reject-${id}`;
+    setActionLoading(loadingKey);
+    try {
+      const result = await fetchApi(`/api/admin/pending-registrations/${id}`, {
+        method: 'DELETE',
+      });
+      if (result.success) {
+        await loadCompanyData();
+        alert(`Registration rejected and deleted.`);
+      } else {
+        alert(`Reject failed: ${result.error}`);
+      }
+    } catch (err) {
+      alert('Failed to reject: ' + err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const openPermanentDeleteModal = async (company) => {
     setSelectedCompany(company);
     setConfirmText('');
@@ -443,6 +490,11 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
           className={activeTab === 'duplicates' ? 'active' : ''} 
           onClick={() => setActiveTab('duplicates')}>
           🔄 Duplicate IPs ({duplicateIps.length})
+        </button>
+        <button 
+          className={activeTab === 'custom-formats' ? 'active' : ''} 
+          onClick={() => setActiveTab('custom-formats')}>
+          📎 Custom Formats ({customFormats.length})
         </button>
       </div>
 
@@ -710,6 +762,17 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                               <>✅ Activate Now</>
                             )}
                           </button>
+                          <button 
+                            className="btn-reject"
+                            onClick={() => rejectPendingRegistration(registration)}
+                            disabled={actionLoading === `reject-${registration.id}`}
+                            title="Reject and delete this registration (removes entry permanently)">
+                            {actionLoading === `reject-${registration.id}` ? (
+                              <>⏳ Rejecting...</>
+                            ) : (
+                              <>❌ Reject</>
+                            )}
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -854,6 +917,163 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'custom-formats' && (
+          <div className="custom-formats-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3>📎 Custom Format Submissions</h3>
+              <button 
+                onClick={loadCustomFormats}
+                style={{ padding: '8px 16px', background: '#6366F1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                🔄 Refresh
+              </button>
+            </div>
+            
+            {loadingFormats ? (
+              <p className="no-data">Loading submissions...</p>
+            ) : customFormats.length === 0 ? (
+              <p className="no-data">No custom format submissions found</p>
+            ) : (
+              <div className="custom-formats-table-container">
+                <table className="trials-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Ticket ID</th>
+                      <th>Customer/Company</th>
+                      <th>Contact Email</th>
+                      <th>Device Company</th>
+                      <th>Device Model</th>
+                      <th>Device Number</th>
+                      <th>Format Description</th>
+                      <th>File</th>
+                      <th>Submitted On</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customFormats.map((submission) => (
+                      <tr key={submission.id}>
+                        <td>
+                          <strong style={{ color: '#6366F1' }}>
+                            {submission.processingNotes?.includes('Ticket ID:') 
+                              ? submission.processingNotes.split('Ticket ID:')[1]?.split('\n')[0]?.trim() || `CFMT-${submission.id}`
+                              : `CFMT-${submission.id}`}
+                          </strong>
+                        </td>
+                        <td>
+                          <div>
+                            <strong>{submission.companyName || 'Unknown'}</strong>
+                            {submission.tenantId && (
+                              <div style={{ fontSize: '12px', color: '#666' }}>Tenant: {submission.tenantId}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div>
+                            <div>{submission.companyEmail || 'N/A'}</div>
+                            {submission.companyPhone && (
+                              <div style={{ fontSize: '12px', color: '#666' }}>{submission.companyPhone}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td>{submission.deviceCompany || 'N/A'}</td>
+                        <td>{submission.deviceModel || 'N/A'}</td>
+                        <td>{submission.deviceNumber || 'N/A'}</td>
+                        <td>
+                          <div style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {submission.formatDescription || 'N/A'}
+                          </div>
+                        </td>
+                        <td>
+                          {submission.hasFile ? (
+                            <div>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const response = await fetch(`${API_BASE}/api/admin/custom-formats/${submission.id}/download`, {
+                                      method: 'GET',
+                                      headers: {
+                                        'Authorization': `Bearer ${token}`,
+                                      },
+                                    });
+                                    
+                                    if (!response.ok) {
+                                      throw new Error(`Failed to download: ${response.statusText}`);
+                                    }
+                                    
+                                    const blob = await response.blob();
+                                    const url = window.URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = submission.originalFileName || 'custom-format-file.xlsx';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    window.URL.revokeObjectURL(url);
+                                    document.body.removeChild(a);
+                                  } catch (err) {
+                                    alert('Failed to download file: ' + err.message);
+                                    console.error('Download error:', err);
+                                  }
+                                }}
+                                style={{ 
+                                  color: '#6366F1', 
+                                  textDecoration: 'underline', 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  fontSize: 'inherit'
+                                }}
+                              >
+                                📎 {submission.originalFileName || 'Download'}
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#999' }}>No file</span>
+                          )}
+                          {submission.fileSizeFormatted && (
+                            <div style={{ fontSize: '11px', color: '#666' }}>
+                              ({submission.fileSizeFormatted})
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {submission.uploadedAt 
+                            ? new Date(submission.uploadedAt).toLocaleString()
+                            : 'N/A'}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => {
+                              const details = `
+Ticket ID: ${submission.processingNotes?.includes('Ticket ID:') 
+  ? submission.processingNotes.split('Ticket ID:')[1]?.split('\n')[0]?.trim() || `CFMT-${submission.id}`
+  : `CFMT-${submission.id}`}
+Company: ${submission.companyName || 'Unknown'}
+Email: ${submission.companyEmail || 'N/A'}
+Phone: ${submission.companyPhone || 'N/A'}
+Tenant ID: ${submission.tenantId || 'N/A'}
+Device Company: ${submission.deviceCompany || 'N/A'}
+Device Model: ${submission.deviceModel || 'N/A'}
+Device Number: ${submission.deviceNumber || 'N/A'}
+Format Description: ${submission.formatDescription || 'N/A'}
+Submitted: ${submission.uploadedAt ? new Date(submission.uploadedAt).toLocaleString() : 'N/A'}
+                              `;
+                              alert(details);
+                            }}
+                            style={{ padding: '4px 8px', background: '#10B981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}

@@ -1,14 +1,6 @@
 // ShiftAssign.jsx - User-friendly shift assignment UI
 import React, { useState, useEffect, useMemo } from "react";
-
-const getApiBase = () => {
-  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
-  return '/api';
-};
-const API_BASE = getApiBase();
+import { API_BASE } from "../../utils/apiConfig";
 
 const getTenantId = () =>
   localStorage.getItem("hrms_tenant_id") || "SASA001";
@@ -43,8 +35,6 @@ export default function ShiftAssign() {
   const [selectedEmps, setSelectedEmps] = useState([]);
   const [search, setSearch] = useState("");
   const [filterDept, setFilterDept] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [pendingAssignments, setPendingAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -126,7 +116,6 @@ export default function ShiftAssign() {
   const addToPending = () => {
     if (!selectedShift) return setMessage({ type: "error", text: "Please select a shift" });
     if (selectedEmps.length === 0) return setMessage({ type: "error", text: "Please select employees" });
-    if (!startDate) return setMessage({ type: "error", text: "Please select start date" });
 
     const newAssignments = selectedEmps.map(empCode => {
       const emp = employees.find(e => e.empCode === empCode);
@@ -135,15 +124,13 @@ export default function ShiftAssign() {
         empName: `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim(),
         shiftCode: selectedShift.code,
         shiftName: selectedShift.name,
-        startDate,
-        endDate: endDate || startDate,
       };
     });
 
-    // Remove duplicates
+    // Remove duplicates (same employee + shift)
     setPendingAssignments(prev => {
-      const existing = new Set(prev.map(p => `${p.empCode}-${p.shiftCode}-${p.startDate}`));
-      const unique = newAssignments.filter(n => !existing.has(`${n.empCode}-${n.shiftCode}-${n.startDate}`));
+      const existing = new Set(prev.map(p => `${p.empCode}-${p.shiftCode}`));
+      const unique = newAssignments.filter(n => !existing.has(`${n.empCode}-${n.shiftCode}`));
       return [...prev, ...unique];
     });
 
@@ -163,8 +150,6 @@ export default function ShiftAssign() {
         empCode: a.empCode,
         shiftCode: a.shiftCode,
         patternType: "NONE",
-        startDate: a.startDate,
-        endDate: a.endDate,
         primary: true,
       }));
       await apiPost(`${API_BASE}/employee-shifts/bulk`, payload);
@@ -327,41 +312,13 @@ export default function ShiftAssign() {
                 <div className="p-8 text-center text-slate-500">No employees found</div>
               )}
             </div>
-          </div>
-
-          {/* Step 3: Set Dates */}
-          <div className="bg-white rounded-2xl shadow-sm border p-4">
-            <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <span className="w-6 h-6 bg-emerald-500 text-white rounded-full text-xs flex items-center justify-center">3</span>
-              Set Duration
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">End Date (optional)</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={addToPending}
-                  className="w-full px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-medium shadow-md hover:shadow-lg transition-all"
-                >
-                  ➕ Add to Preview
-                </button>
-              </div>
+            <div className="mt-4">
+              <button
+                onClick={addToPending}
+                className="w-full px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-medium shadow-md hover:shadow-lg transition-all"
+              >
+                ➕ Add to Preview
+              </button>
             </div>
           </div>
         </div>
@@ -385,7 +342,7 @@ export default function ShiftAssign() {
               <div className="text-center py-8 text-slate-400">
                 <div className="text-4xl mb-2">📝</div>
                 <p className="text-sm">No pending assignments</p>
-                <p className="text-xs mt-1">Select shift, employees & dates to add</p>
+                <p className="text-xs mt-1">Select shift & employees to add</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-auto">
@@ -396,9 +353,7 @@ export default function ShiftAssign() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-slate-800 truncate">{a.empName}</div>
-                      <div className="text-xs text-slate-500">
-                        {a.shiftName} • {a.startDate}
-                      </div>
+                      <div className="text-xs text-slate-500">{a.shiftName}</div>
                     </div>
                     <button
                       onClick={() => removePending(i)}

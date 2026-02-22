@@ -44,7 +44,7 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto text-center relative z-10">
           <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 rounded-full px-4 py-2 mb-6">
             <span className="animate-pulse w-2 h-2 bg-emerald-400 rounded-full"></span>
-            <span className="text-sm text-indigo-300">Free 14-day trial • No credit card required</span>
+            <span className="text-sm text-indigo-300">Free 1 month trial • No credit card required</span>
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
@@ -190,18 +190,18 @@ function LandingPage() {
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold">Free Trial</h3>
                 <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-sm font-medium">
-                  14 Days
+                  1 Month
                 </span>
               </div>
               
               <div className="mb-6">
                 <span className="text-5xl font-bold">₹0</span>
-                <span className="text-slate-400 ml-2">for 14 days</span>
+                <span className="text-slate-400 ml-2">for 1 month</span>
               </div>
               
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-emerald-400">✓</span> Up to 25 employees
+                  <span className="text-emerald-400">✓</span> Up to 100 employees
                 </li>
                 <li className="flex items-center gap-2 text-slate-300">
                   <span className="text-emerald-400">✓</span> All features included

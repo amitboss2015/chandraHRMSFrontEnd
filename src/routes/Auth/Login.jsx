@@ -2,6 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getStoredPeriod } from '../../utils/monthYearState';
+import MonthYearSelectorModal from '../../components/MonthYearSelectorModal';
+import AttendanceDisclaimerModal from '../../components/AttendanceDisclaimerModal';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -9,6 +12,8 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showMonthYearModal, setShowMonthYearModal] = useState(false);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -27,7 +32,23 @@ function Login() {
     try {
       const result = await login(email, password);
       if (result.success) {
-        navigate('/');
+        // Check if disclaimer has been acknowledged
+        const disclaimerAcknowledged = localStorage.getItem('hrms_disclaimer_acknowledged') === 'true';
+        
+        if (!disclaimerAcknowledged) {
+          // Show disclaimer modal first
+          setShowDisclaimerModal(true);
+        } else {
+          // Check if month/year is already stored
+          const stored = getStoredPeriod();
+          if (stored && stored.month && stored.year) {
+            // Already selected, go to dashboard
+            navigate('/');
+          } else {
+            // Show month/year selector modal
+            setShowMonthYearModal(true);
+          }
+        }
       } else {
         setError(result.error || 'Invalid email or password');
       }
@@ -36,6 +57,22 @@ function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDisclaimerAcknowledge = () => {
+    setShowDisclaimerModal(false);
+    // After acknowledging disclaimer, check for month/year selection
+    const stored = getStoredPeriod();
+    if (stored && stored.month && stored.year) {
+      navigate('/');
+    } else {
+      setShowMonthYearModal(true);
+    }
+  };
+
+  const handleMonthYearSelect = (month, year) => {
+    setShowMonthYearModal(false);
+    navigate('/');
   };
 
   return (
@@ -190,6 +227,26 @@ function Login() {
           © 2026 ChandraHR. Powering Indian Workforce Management.
         </p>
       </div>
+
+      {/* Disclaimer Modal - Shows after successful login (first time only) */}
+      <AttendanceDisclaimerModal
+        isOpen={showDisclaimerModal}
+        onAcknowledge={handleDisclaimerAcknowledge}
+        onClose={() => {
+          // If user closes modal, still proceed (they can read it later)
+          handleDisclaimerAcknowledge();
+        }}
+      />
+
+      {/* Month/Year Selector Modal - Shows after successful login */}
+      <MonthYearSelectorModal
+        isOpen={showMonthYearModal}
+        onSelect={handleMonthYearSelect}
+        onClose={() => {
+          // If user closes modal, stay on login page
+          setShowMonthYearModal(false);
+        }}
+      />
     </div>
   );
 }

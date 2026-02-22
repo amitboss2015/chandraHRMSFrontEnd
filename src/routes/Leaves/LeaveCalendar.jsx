@@ -6,7 +6,7 @@ import Field from "../../components/Field";
 
 const CATEGORIES = ["PUBLIC", "OPTIONAL", "COMPANY"];
 
-export default function LeaveCalendar({ orgId: propOrgId }) {
+export default function LeaveCalendar({ orgId: propOrgId, onCalendarCreated }) {
   const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001"; // like other pages
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
@@ -36,8 +36,14 @@ export default function LeaveCalendar({ orgId: propOrgId }) {
   const save = async () => {
     if (!form.date || !form.name) return alert("Date and Name are required");
     const payload = { ...form, leaveTypeId: form.leaveTypeId || null };
+    const isNew = !editing;
     editing ? await updateCalendar(editing.id, payload) : await createCalendar(payload);
-    startNew(); await refresh();
+    startNew(); 
+    await refresh();
+    // Notify parent to refresh setup status if a new calendar leave was created
+    if (isNew && onCalendarCreated) {
+      onCalendarCreated();
+    }
   };
   const remove = async (r) => { if (confirm(`Delete ${r.name} (${r.date})?`)) { await deleteCalendar(r.id); await refresh(); } };
 

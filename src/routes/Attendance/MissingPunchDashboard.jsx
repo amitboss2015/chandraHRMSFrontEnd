@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePeriodSelection } from "../../utils/monthYearState";
 
 // API helper
 const getApiBase = () => {
@@ -44,8 +45,8 @@ async function fetchJson(path, options = {}) {
 const SHIFT = { inTime: "09:00", outTime: "17:30" };
 
 const MissingPunchDashboard = () => {
-  const [month, setMonth] = useState(12);
-  const [year, setYear] = useState(2025);
+  // Use shared month/year selection that persists across pages
+  const { month, year, setMonth, setYear } = usePeriodSelection();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);

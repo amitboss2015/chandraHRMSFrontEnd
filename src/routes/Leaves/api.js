@@ -52,7 +52,7 @@ async function parseSmart(res) {
 const getToken = () => sessionStorage.getItem('hrms_access_token') || '';
 const getTenantId = () => localStorage.getItem('hrms_tenant_id') || 'SASA001';
 
-async function request(path, { method = "GET", body, headers } = {}) {
+export async function request(path, { method = "GET", body, headers } = {}) {
   const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const token = getToken();
   
@@ -175,6 +175,30 @@ export async function closeYear(orgId, year) {
 // Cancel a leave
 export async function cancelLeave(leaveId, reason) {
   return request(`/leave/admin/${leaveId}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`, { method: "DELETE" });
+}
+
+// Approve a leave
+export async function approveLeave(leaveId, remarks) {
+  return request(`/leave/admin/${leaveId}/approve${remarks ? `?remarks=${encodeURIComponent(remarks)}` : ''}`, { method: "PUT" });
+}
+
+// Reject a leave
+export async function rejectLeave(leaveId, remarks) {
+  return request(`/leave/admin/${leaveId}/reject${remarks ? `?remarks=${encodeURIComponent(remarks)}` : ''}`, { method: "PUT" });
+}
+
+// Get all leaves in date range
+export async function getLeavesByDateRange(orgId, fromDate, toDate) {
+  return request(`/leave/reports/date-range?orgId=${encodeURIComponent(orgId)}&fromDate=${fromDate}&toDate=${toDate}`);
+}
+
+/* ---------- Leave Setup Status API ---------- */
+export async function getLeaveSetupStatus(orgId) {
+  return request(`/leave/setup/status${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''}`);
+}
+
+export async function getLeaveSetupChecklist(orgId) {
+  return request(`/leave/setup/checklist${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''}`);
 }
 
 /* ---------- Generic helpers if you still need them ---------- */

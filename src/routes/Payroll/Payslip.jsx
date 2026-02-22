@@ -226,7 +226,7 @@ function Payslip() {
                 <p className="text-xl font-bold text-blue-600">{formatCurrency(payslip.basicSalary)}</p>
               </div>
               <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-xs text-gray-500">Increment</p>
+                <p className="text-xs text-gray-500">Allowance</p>
                 <p className="text-xl font-bold text-green-600">{formatCurrency(payslip.increment)}</p>
               </div>
               <div className="bg-purple-50 p-4 rounded-lg">

@@ -1,6 +1,9 @@
 // Dashboard.jsx - Comprehensive dashboard with actionable insights
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { usePeriodSelection, getStoredPeriod } from '../utils/monthYearState';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import WorkflowHeader from '../components/WorkflowHeader';
 
 const getApiBase = () => {
   if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
@@ -18,9 +21,9 @@ const getToken = () =>
 const getTenantId = () =>
   localStorage.getItem('hrms_tenant_id') || 'SASA001';
 
-// Cache key for dashboard data - TENANT SPECIFIC
-const getDashboardCacheKey = () => `hrms_dashboard_cache_${getTenantId()}`;
-const getDashboardCacheExpiryKey = () => `hrms_dashboard_cache_expiry_${getTenantId()}`;
+// Cache key for dashboard data - TENANT SPECIFIC + MONTH/YEAR SPECIFIC
+const getDashboardCacheKey = (month, year) => `hrms_dashboard_cache_${getTenantId()}_${year}_${month}`;
+const getDashboardCacheExpiryKey = (month, year) => `hrms_dashboard_cache_expiry_${getTenantId()}_${year}_${month}`;
 
 const fetchApi = async (url) => {
   try {
@@ -38,10 +41,10 @@ const fetchApi = async (url) => {
   }
 };
 
-// Cache management - TENANT SPECIFIC
-const getCachedData = () => {
-  const cacheKey = getDashboardCacheKey();
-  const expiryKey = getDashboardCacheExpiryKey();
+// Cache management - TENANT SPECIFIC + MONTH/YEAR SPECIFIC
+const getCachedData = (month, year) => {
+  const cacheKey = getDashboardCacheKey(month, year);
+  const expiryKey = getDashboardCacheExpiryKey(month, year);
   const cached = sessionStorage.getItem(cacheKey);
   const expiry = sessionStorage.getItem(expiryKey);
   if (cached && expiry && Date.now() < parseInt(expiry)) {
@@ -50,9 +53,9 @@ const getCachedData = () => {
   return null;
 };
 
-const setCachedData = (data) => {
-  const cacheKey = getDashboardCacheKey();
-  const expiryKey = getDashboardCacheExpiryKey();
+const setCachedData = (data, month, year) => {
+  const cacheKey = getDashboardCacheKey(month, year);
+  const expiryKey = getDashboardCacheExpiryKey(month, year);
   sessionStorage.setItem(cacheKey, JSON.stringify(data));
   // Cache for 30 minutes (until logout clears session storage)
   sessionStorage.setItem(expiryKey, (Date.now() + 30 * 60 * 1000).toString());
@@ -62,15 +65,57 @@ function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
+  const { month: selectedMonth, year: selectedYear, setMonth: setSelectedMonth, setYear: setSelectedYear, setPeriod } = usePeriodSelection();
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const lastFetchedRef = useRef({ month: null, year: null });
 
+  // Fetch available months on component mount (only once)
   useEffect(() => {
-    loadDashboardData();
+    fetchAvailableMonths();
   }, []);
 
-  const loadDashboardData = async (forceRefresh = false) => {
+  // Load dashboard data when month/year changes (but prevent duplicate calls)
+  useEffect(() => {
+    if (selectedMonth && selectedYear) {
+      // Prevent duplicate calls for the same month/year
+      if (lastFetchedRef.current.month === selectedMonth && 
+          lastFetchedRef.current.year === selectedYear) {
+        return;
+      }
+      lastFetchedRef.current = { month: selectedMonth, year: selectedYear };
+      loadDashboardData(false, selectedMonth, selectedYear);
+      setIsInitialLoad(false);
+    }
+  }, [selectedMonth, selectedYear]);
+
+  const fetchAvailableMonths = async () => {
+    try {
+      const data = await fetchApi(`${API_BASE}/attendance/dashboard-stats/available-months`);
+      if (data && data.availableMonths) {
+        setAvailableMonths(data.availableMonths);
+        // Only auto-select latest month if no stored period exists AND no month/year is currently selected
+        // This prevents triggering the dashboard load effect unnecessarily
+        const stored = getStoredPeriod();
+        if (!stored && !selectedMonth && !selectedYear && data.availableMonths.length > 0) {
+          const latest = data.availableMonths[0];
+          // Use setPeriod from the hook we already have at component level
+          setPeriod(latest.month, latest.year);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching available months:', e);
+    }
+  };
+
+  const loadDashboardData = async (forceRefresh = false, month = null, year = null) => {
+    // Use provided month/year or current selection
+    const monthToUse = month || selectedMonth;
+    const yearToUse = year || selectedYear;
+
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
-      const cached = getCachedData();
+      const cached = getCachedData(monthToUse, yearToUse);
       if (cached) {
         setStats(cached);
         setFromCache(true);
@@ -83,10 +128,12 @@ function Dashboard() {
     setFromCache(false);
     
     try {
-      const data = await fetchApi(`${API_BASE}/attendance/dashboard-stats`);
+      // Build URL with month/year parameters
+      const url = `${API_BASE}/attendance/dashboard-stats?month=${monthToUse}&year=${yearToUse}`;
+      const data = await fetchApi(url);
       if (data) {
         setStats(data);
-        setCachedData(data);
+        setCachedData(data, monthToUse, yearToUse);
       }
     } catch (e) {
       console.error('Dashboard load error:', e);
@@ -128,7 +175,7 @@ function Dashboard() {
         <div className="text-center">
           <p className="text-slate-600">Failed to load dashboard data</p>
           <button 
-            onClick={() => loadDashboardData(true)}
+            onClick={() => loadDashboardData(true, selectedMonth, selectedYear)}
             className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
           >
             Retry
@@ -140,6 +187,9 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">
+      {/* Workflow Header - Shows progress and workflow steps (single source of truth for month/year) */}
+      <WorkflowHeader />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -151,7 +201,7 @@ function Dashboard() {
             <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Cached</span>
           )}
           <button 
-            onClick={() => loadDashboardData(true)}
+            onClick={() => loadDashboardData(true, selectedMonth, selectedYear)}
             className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
             title="Refresh data"
           >
@@ -160,22 +210,23 @@ function Dashboard() {
         </div>
       </div>
 
+
       {/* Month Banner */}
       <div className="mb-6 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-emerald-100 text-sm font-medium uppercase tracking-wide">Attendance Data For</p>
             <h2 className="text-2xl md:text-3xl font-bold mt-1">
-              {stats.hasAttendanceData ? stats.monthName : 'No Data Available'}
+              {stats.hasAttendanceData && stats.monthName ? stats.monthName : (stats.monthName || 'No Data Available')}
             </h2>
             <div className="flex items-center gap-4 mt-3 text-emerald-100 text-sm">
-              <span>👥 {stats.activeEmployees} active employees</span>
+              <span>👥 {stats.activeEmployees || 0} active employees</span>
               <span>•</span>
               <span>📊 {stats.employeesWithData || 0} with attendance</span>
             </div>
           </div>
           <div className="hidden md:block text-right">
-            <div className="text-4xl font-bold">{stats.attendanceRate || 0}%</div>
+            <div className="text-4xl font-bold">{stats.hasAttendanceData ? (stats.attendanceRate || 0) : 0}%</div>
             <div className="text-emerald-100 text-sm">Attendance Rate</div>
           </div>
         </div>
@@ -199,86 +250,275 @@ function Dashboard() {
         <StatCard
           title="Payroll Generated"
           value={stats.payrollGenerated ? 'Yes' : 'No'}
-          subtitle={stats.payrollGenerated ? `${stats.payrollCount} employees` : 'Not yet'}
+          subtitle={stats.payrollGenerated ? `${stats.payrollCount} employees` : (!stats.hasAttendanceData ? 'Upload attendance first' : 'Not yet')}
           icon="💰"
           color={stats.payrollGenerated ? 'green' : 'amber'}
         />
         <StatCard
           title="Total Payout"
-          value={formatCurrency(stats.totalPayrollAmount)}
-          subtitle={stats.monthName}
+          value={stats.hasAttendanceData && stats.totalPayrollAmount ? formatCurrency(stats.totalPayrollAmount) : 'N/A'}
+          subtitle={!stats.hasAttendanceData ? 'No attendance data' : (stats.payrollGenerated ? stats.monthName : 'Generate payroll')}
           icon="💵"
-          color="emerald"
+          color={stats.hasAttendanceData && stats.totalPayrollAmount ? 'emerald' : 'slate'}
         />
       </div>
+
+      {/* No Attendance Data Banner */}
+      {!stats.hasAttendanceData && (
+        <div className="mb-6 bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">📤</span>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-amber-800 mb-1">
+                No Attendance Data Uploaded
+              </h3>
+              <p className="text-sm text-amber-700 mb-3">
+                Attendance data has not been uploaded for {stats.monthName || `${selectedMonth}/${selectedYear}`}. 
+                Upload attendance data to see charts, reports, and generate payroll.
+              </p>
+              <a
+                href="/attendance"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Upload Attendance Data →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         
-        {/* Top Performers & Late Employees */}
+        {/* Charts and Metrics */}
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* Top 5 Best Attendance */}
+          {/* Top 5 Best Attendance - Animated Chart */}
           <div className="bg-white rounded-2xl shadow-sm border p-5">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               🏆 Top 5 Attendance
             </h3>
-            {stats.topAttendance?.length > 0 ? (
-              <div className="space-y-3">
-                {stats.topAttendance.map((emp, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-emerald-50">
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-yellow-400 text-yellow-900' : 
-                        i === 1 ? 'bg-slate-300 text-slate-700' :
-                        i === 2 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'
-                      }`}>
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{emp.name}</p>
-                        <p className="text-xs text-slate-500">{emp.empCode}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-emerald-600">{emp.rate}%</p>
-                      <p className="text-xs text-slate-500">{emp.presentDays} days</p>
-                    </div>
-                  </div>
-                ))}
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No attendance data uploaded for this month. Upload attendance data to see top performers." 
+              />
+            ) : stats.topAttendance?.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.topAttendance.map((emp, i) => ({
+                    name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
+                    rate: Math.max(emp.rate || 0, 0), // Ensure non-negative
+                    fullName: emp.name,
+                    empCode: emp.empCode,
+                    presentDays: emp.presentDays || 0
+                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 11 }}
+                      domain={[0, 'dataMax']}
+                    />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border rounded-lg shadow-lg">
+                              <p className="font-semibold text-slate-800">{data.fullName}</p>
+                              <p className="text-xs text-slate-500">{data.empCode}</p>
+                              <p className="text-emerald-600 font-bold mt-1">{data.rate}% Attendance</p>
+                              <p className="text-xs text-slate-500">{data.presentDays} present days</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="rate" radius={[8, 8, 0, 0]} animationDuration={1500}>
+                      {stats.topAttendance.map((emp, i) => (
+                        <Cell 
+                          key={`cell-${i}`} 
+                          fill={
+                            i === 0 ? '#fbbf24' : 
+                            i === 1 ? '#94a3b8' : 
+                            i === 2 ? '#d97706' : 
+                            '#cbd5e1'
+                          } 
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             ) : (
               <EmptyState icon="📊" message="No attendance data" />
             )}
           </div>
 
-          {/* Top 5 Late Employees */}
+          {/* Top 5 Late Employees - Animated Chart */}
           <div className="bg-white rounded-2xl shadow-sm border p-5">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               ⏰ Most Late Arrivals
             </h3>
-            {stats.topLate?.length > 0 ? (
-              <div className="space-y-3">
-                {stats.topLate.map((emp, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-amber-50">
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-full bg-amber-400 text-amber-900 flex items-center justify-center text-xs font-bold">
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{emp.name}</p>
-                        <p className="text-xs text-slate-500">{emp.empCode}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-amber-600">{emp.lateDays} days</p>
-                      <p className="text-xs text-slate-500">{Math.round(emp.lateMinutes / 60)}h late</p>
-                    </div>
-                  </div>
-                ))}
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No attendance data uploaded. Upload attendance data to see late arrival statistics." 
+              />
+            ) : stats.topLate?.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.topLate.map((emp, i) => ({
+                    name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
+                    days: emp.lateDays || 0,
+                    minutes: emp.lateMinutes || 0,
+                    fullName: emp.name,
+                    empCode: emp.empCode
+                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border rounded-lg shadow-lg">
+                              <p className="font-semibold text-slate-800">{data.fullName}</p>
+                              <p className="text-xs text-slate-500">{data.empCode}</p>
+                              <p className="text-amber-600 font-bold mt-1">{data.days} days late</p>
+                              <p className="text-xs text-slate-500">{Math.round(data.minutes / 60)}h {data.minutes % 60}m total</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="days" radius={[8, 8, 0, 0]} fill="#f59e0b" animationDuration={1500} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             ) : (
               <EmptyState icon="✅" message="No late arrivals" positive />
+            )}
+          </div>
+
+          {/* Top 5 Missing Punches - Animated Chart */}
+          <div className="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              🔴 Maximum Miss Punches
+            </h3>
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No attendance data uploaded. Upload attendance data to see missing punch statistics." 
+              />
+            ) : stats.topMissingPunch?.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.topMissingPunch.map((emp, i) => ({
+                    name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
+                    count: emp.missingPunchCount || 0,
+                    fullName: emp.name,
+                    empCode: emp.empCode
+                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border rounded-lg shadow-lg">
+                              <p className="font-semibold text-slate-800">{data.fullName}</p>
+                              <p className="text-xs text-slate-500">{data.empCode}</p>
+                              <p className="text-red-600 font-bold mt-1">{data.count} missing punches</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="#ef4444" animationDuration={1500} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyState icon="✅" message="No missing punches" positive />
+            )}
+          </div>
+
+          {/* Top 5 Early Exits - Animated Chart */}
+          <div className="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              🚪 Maximum Early Exits
+            </h3>
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No attendance data uploaded. Upload attendance data to see early exit statistics." 
+              />
+            ) : stats.topEarlyExit?.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.topEarlyExit.map((emp, i) => ({
+                    name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
+                    days: emp.earlyOutDays || 0,
+                    minutes: emp.earlyOutMinutes || 0,
+                    fullName: emp.name,
+                    empCode: emp.empCode
+                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border rounded-lg shadow-lg">
+                              <p className="font-semibold text-slate-800">{data.fullName}</p>
+                              <p className="text-xs text-slate-500">{data.empCode}</p>
+                              <p className="text-orange-600 font-bold mt-1">{data.days} days early exit</p>
+                              <p className="text-xs text-slate-500">{Math.round(data.minutes / 60)}h {data.minutes % 60}m total</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="days" radius={[8, 8, 0, 0]} fill="#f97316" animationDuration={1500} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyState icon="✅" message="No early exits" positive />
             )}
           </div>
 
@@ -287,7 +527,12 @@ function Dashboard() {
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               💰 Top 5 Earners
             </h3>
-            {stats.topEarners?.length > 0 ? (
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No payroll data available. Upload attendance data and generate payroll to see top earners." 
+              />
+            ) : stats.topEarners?.length > 0 ? (
               <div className="space-y-3">
                 {stats.topEarners.map((emp, i) => (
                   <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-green-50">
@@ -319,7 +564,12 @@ function Dashboard() {
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               📅 Peak Absent Day
             </h3>
-            {stats.peakAbsentDay ? (
+            {!stats.hasAttendanceData ? (
+              <EmptyState 
+                icon="📤" 
+                message="No attendance data uploaded. Upload attendance data to see peak absent day analysis." 
+              />
+            ) : stats.peakAbsentDay ? (
               <div className="text-center py-4">
                 <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-3">
                   <span className="text-3xl">📆</span>
@@ -459,6 +709,7 @@ function StatCard({ title, value, subtitle, icon, color }) {
     red: 'from-red-500 to-red-600',
     amber: 'from-amber-500 to-amber-600',
     purple: 'from-purple-500 to-purple-600',
+    slate: 'from-slate-400 to-slate-500',
   };
 
   return (
@@ -479,9 +730,9 @@ function StatCard({ title, value, subtitle, icon, color }) {
 
 function EmptyState({ icon, message, positive }) {
   return (
-    <div className={`text-center py-6 ${positive ? 'text-emerald-600' : 'text-slate-400'}`}>
-      <span className="text-3xl">{icon}</span>
-      <p className="text-sm mt-2">{message}</p>
+    <div className={`text-center py-8 ${positive ? 'text-emerald-600' : 'text-slate-500'}`}>
+      <span className="text-4xl mb-3 block">{icon}</span>
+      <p className="text-sm font-medium mt-2 leading-relaxed px-4">{message}</p>
     </div>
   );
 }

@@ -1,15 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-// Dynamically set API base URL based on current host
+// API base - same logic as apiConfig: localhost→8080, else relative /api (ngrok, chandrahr.in)
 const getApiBase = () => {
   const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080/api';
-  }
-  // For production, use relative path (Nginx proxies /api/* to backend)
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
   return '/api';
 };
-
 const API_BASE = getApiBase();
 
 const AuthContext = createContext();
@@ -24,31 +20,35 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Get tenant ID from localStorage or subdomain
+  // Get tenant ID from localStorage or subdomain (only for known SaaS company URLs)
   const getTenantId = useCallback(() => {
     const stored = localStorage.getItem('hrms_tenant_id');
     if (stored) return stored;
     
     const hostname = window.location.hostname;
     
-    // Check if hostname is an IP address (don't extract tenant from IP)
+    // Don't extract tenant from: IP, localhost, ngrok, or other non-company URLs
     const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
     if (isIpAddress || hostname === 'localhost' || hostname === '127.0.0.1') {
-      return ''; // Empty string - let backend handle it
+      return '';
     }
-    
-    // Check if it's the main domain (chandrahr.in or www.chandrahr.in)
+    if (hostname.includes('ngrok') || hostname.includes('ngrok-free') || hostname.includes('ngrok.io')) {
+      return ''; // ngrok URLs are not tenant subdomains
+    }
     if (hostname === 'chandrahr.in' || hostname === 'www.chandrahr.in') {
-      return ''; // Empty string - let backend handle it
+      return '';
     }
     
-    // Extract subdomain for multi-tenant setup
+    // Only extract subdomain for known SaaS domain (e.g. *.chandrahr.in)
     const parts = hostname.split('.');
     if (parts.length >= 3 && !['www'].includes(parts[0])) {
-      return parts[0].toUpperCase();
+      const baseDomain = parts.slice(-2).join('.');
+      if (baseDomain === 'chandrahr.in' || baseDomain === 'hrms.in') {
+        return parts[0].toUpperCase();
+      }
     }
     
-    return ''; // Empty string - let backend handle it
+    return '';
   }, []);
 
   // Clear all auth data and redirect to login
@@ -192,23 +192,18 @@ export function AuthProvider({ children }) {
     setLoading(true);
 
     try {
-      // IMPORTANT: Don't use stored tenantId for login - let backend resolve from email
-      // This prevents issues when switching between accounts (e.g., SUPER_ADMIN to regular user)
-      // Clear any previously stored tenant to avoid conflicts
-      localStorage.removeItem('hrms_tenant_id');
-      
-      // For login, don't send tenantId - backend will resolve it from email
-      const tenantId = ''; // Empty - let backend handle
-      console.log('🔐 Login attempt:', { email, tenantId: '(auto-resolve)' });
+      // Pass tenant from subdomain when on company URL; otherwise empty - backend derives from email.
+      const tenantId = getTenantId();
+      console.log('🔐 Login attempt:', { email, tenantId: tenantId || '(derive from email)' });
       
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Tenant-Id': tenantId,
+          'X-Tenant-Id': tenantId || '',
         },
         credentials: 'include',
-        body: JSON.stringify({ email, password, tenantId }),
+        body: JSON.stringify({ email, password, tenantId: tenantId || '' }),
       });
 
       const data = await response.json();

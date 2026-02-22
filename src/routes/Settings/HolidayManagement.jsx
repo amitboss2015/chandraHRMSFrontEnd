@@ -1,30 +1,31 @@
-// HolidayManagement.jsx - Modern holiday management UI
+// HolidayManagement.jsx - Weekly Off Configuration (Yearly Holidays removed - use Calendar in Leave Management)
 import React, { useState, useEffect } from "react";
-import { holidayApi } from "../../services/api";
+import { holidayApi, getTenantId } from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
 
 function HolidayManagement() {
-  const [activeTab, setActiveTab] = useState("holidays");
-  const [holidays, setHolidays] = useState([]);
+  const { user } = useAuth();
   const [weeklyOffs, setWeeklyOffs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingHoliday, setEditingHoliday] = useState(null);
   const [message, setMessage] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-
-  const [newHoliday, setNewHoliday] = useState({
-    orgId: 'SASA001',
-    name: '',
-    holidayDate: '',
-    description: '',
-    applicableEmploymentTypes: '',
-    isPaid: true,
-    isOptional: false
+  
+  // Local state for each employment type (for editing before save)
+  const [localConfigs, setLocalConfigs] = useState({
+    FULL_TIME: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' },
+    PART_TIME: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' },
+    CONTRACT: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' }
+  });
+  
+  // Track which configs have unsaved changes
+  const [hasChanges, setHasChanges] = useState({
+    FULL_TIME: false,
+    PART_TIME: false,
+    CONTRACT: false
   });
 
   useEffect(() => {
     loadData();
-  }, [selectedYear]);
+  }, []);
 
   useEffect(() => {
     if (message) {
@@ -36,95 +37,149 @@ function HolidayManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [holidaysData, weeklyOffData] = await Promise.all([
-        holidayApi.getAll('SASA001', selectedYear),
-        holidayApi.getWeeklyOff('SASA001')
-      ]);
-      setHolidays(holidaysData);
-      setWeeklyOffs(weeklyOffData);
+      // Use tenant ID from user object (from JWT) or localStorage, or fallback
+      const tenantId = user?.tenantId || getTenantId() || localStorage.getItem('hrms_tenant_id') || '';
+      if (!tenantId) {
+        setMessage({ type: 'error', text: 'Tenant ID not found. Please login again.' });
+        return;
+      }
+      console.log('Loading weekly off config for tenant:', tenantId);
+      const weeklyOffData = await holidayApi.getWeeklyOff(tenantId);
+      setWeeklyOffs(weeklyOffData || []);
+      
+      // Initialize local configs from loaded data
+      const newLocalConfigs = {
+        FULL_TIME: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' },
+        PART_TIME: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' },
+        CONTRACT: { weeklyOffDays: [], alternateSaturdayRule: 'NONE' }
+      };
+      
+      weeklyOffData.forEach(config => {
+        const empType = config.employmentType;
+        newLocalConfigs[empType] = {
+          weeklyOffDays: config.weeklyOffDays ? config.weeklyOffDays.split(',').filter(d => d.trim()) : [],
+          alternateSaturdayRule: config.alternateSaturdayRule || 'NONE'
+        };
+      });
+      
+      setLocalConfigs(newLocalConfigs);
+      setHasChanges({ FULL_TIME: false, PART_TIME: false, CONTRACT: false });
     } catch (error) {
       console.error('Failed to load data:', error);
+      setMessage({ type: 'error', text: 'Failed to load weekly off configuration: ' + (error.message || '') });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddHoliday = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingHoliday) {
-        await holidayApi.update(editingHoliday.id, newHoliday);
-        setMessage({ type: 'success', text: 'Holiday updated successfully!' });
-      } else {
-        await holidayApi.create(newHoliday);
-        setMessage({ type: 'success', text: 'Holiday added successfully!' });
+  const handleDayToggle = (empType, day) => {
+    const currentConfig = localConfigs[empType];
+    const alternateRule = currentConfig.alternateSaturdayRule || 'NONE';
+    
+    // If alternate Saturday rule is active, Saturday cannot be unselected
+    if (day === 'SATURDAY' && alternateRule !== 'NONE') {
+      // Don't allow unselecting Saturday when alternate rule is active
+      return;
+    }
+    
+    const currentDays = currentConfig.weeklyOffDays || [];
+    let newDays;
+    if (currentDays.includes(day)) {
+      newDays = currentDays.filter(d => d !== day);
+    } else {
+      newDays = [...currentDays, day];
+    }
+    
+    setLocalConfigs(prev => ({
+      ...prev,
+      [empType]: {
+        ...prev[empType],
+        weeklyOffDays: newDays
       }
-      setShowAddModal(false);
-      setEditingHoliday(null);
-      setNewHoliday({
-        orgId: 'SASA001',
-        name: '',
-        holidayDate: '',
-        description: '',
-        applicableEmploymentTypes: '',
-        isPaid: true,
-        isOptional: false
-      });
-      await loadData();
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to save holiday.' });
+    }));
+    
+    setHasChanges(prev => ({ ...prev, [empType]: true }));
+  };
+
+  const handleAlternateRuleChange = (empType, rule) => {
+    const currentConfig = localConfigs[empType];
+    let newWeeklyOffDays = [...(currentConfig.weeklyOffDays || [])];
+    
+    // If alternate rule is selected (not "NONE"), automatically select Saturday
+    if (rule !== 'NONE') {
+      if (!newWeeklyOffDays.includes('SATURDAY')) {
+        newWeeklyOffDays.push('SATURDAY');
+      }
     }
+    
+    setLocalConfigs(prev => ({
+      ...prev,
+      [empType]: {
+        ...prev[empType],
+        alternateSaturdayRule: rule,
+        weeklyOffDays: newWeeklyOffDays
+      }
+    }));
+    
+    setHasChanges(prev => ({ ...prev, [empType]: true }));
   };
 
-  const handleDeleteHoliday = async (id) => {
-    if (!confirm('Are you sure you want to delete this holiday?')) return;
+  const handleSaveWeeklyOff = async (empType) => {
     try {
-      await holidayApi.delete(id);
-      setMessage({ type: 'success', text: 'Holiday deleted successfully!' });
-      await loadData();
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to delete holiday.' });
-    }
-  };
-
-  const handleEditHoliday = (holiday) => {
-    setEditingHoliday(holiday);
-    setNewHoliday({
-      orgId: holiday.orgId,
-      name: holiday.name,
-      holidayDate: holiday.holidayDate,
-      description: holiday.description || '',
-      applicableEmploymentTypes: holiday.applicableEmploymentTypes || '',
-      isPaid: holiday.isPaid,
-      isOptional: holiday.isOptional
-    });
-    setShowAddModal(true);
-  };
-
-  const handleSaveWeeklyOff = async (empType, days, alternateSat) => {
-    try {
-      await holidayApi.saveWeeklyOff({
-        orgId: 'SASA001',
+      // Use tenant ID from user object (from JWT) or localStorage, or fallback
+      const tenantId = user?.tenantId || getTenantId() || localStorage.getItem('hrms_tenant_id') || '';
+      if (!tenantId) {
+        setMessage({ type: 'error', text: 'Tenant ID not found. Please login again.' });
+        return;
+      }
+      
+      const config = localConfigs[empType];
+      const daysString = config.weeklyOffDays.join(',');
+      const alternateRule = config.alternateSaturdayRule || 'NONE';
+      
+      console.log('💾 Saving weekly off config:', {
+        tenant: tenantId,
         employmentType: empType,
-        weeklyOffDays: days,
-        alternateSaturdayRule: alternateSat
+        weeklyOffDays: daysString,
+        alternateSaturdayRule: alternateRule
       });
-      setMessage({ type: 'success', text: 'Weekly off configuration saved!' });
+      
+      const response = await holidayApi.saveWeeklyOff({
+        orgId: tenantId,
+        tenantId: tenantId,
+        employmentType: empType,
+        weeklyOffDays: daysString,
+        alternateSaturdayRule: alternateRule
+      });
+      
+      console.log('✅ Save response:', response);
+      
+      // Verify the saved data
+      if (response.alternateSaturdayRule !== alternateRule) {
+        console.warn('⚠️ Warning: Alternate rule mismatch!', {
+          sent: alternateRule,
+          received: response.alternateSaturdayRule
+        });
+        setMessage({ 
+          type: 'error', 
+          text: `Warning: Alternate rule may not have saved correctly. Expected: ${alternateRule}, Got: ${response.alternateSaturdayRule}` 
+        });
+      } else {
+        console.log('✅ Verified: Alternate rule saved correctly:', alternateRule);
+        setMessage({ 
+          type: 'success', 
+          text: `${empType.replace('_', ' ')} weekly off configuration saved successfully!` 
+        });
+      }
+      
+      // Reload data to get latest from server
       await loadData();
     } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to save weekly off configuration.' });
+      console.error('❌ Save error:', error);
+      setMessage({ type: 'error', text: 'Failed to save weekly off configuration. ' + (error.message || '') });
     }
   };
 
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  const getDayOfWeek = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-IN', { weekday: 'short' });
-  };
 
   if (loading) {
     return (
@@ -139,8 +194,11 @@ function HolidayManagement() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">🎉 Holiday Management</h1>
-          <p className="text-slate-500 text-sm mt-1">Configure holidays and weekly offs</p>
+          <h1 className="text-2xl font-bold text-slate-800">🔄 Weekly Off Configuration</h1>
+          <p className="text-slate-500 text-sm mt-1">Configure weekly off days for different employment types</p>
+          <p className="text-xs text-amber-600 mt-2">
+            💡 Note: For calendar holidays, please use the Calendar tab in Leave Management
+          </p>
         </div>
       </div>
 
@@ -157,182 +215,11 @@ function HolidayManagement() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden mb-6">
-        <div className="flex">
-          <button
-            className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all relative ${
-              activeTab === "holidays"
-                ? "text-emerald-600 bg-emerald-50"
-                : "text-slate-500 hover:text-emerald-600 hover:bg-slate-50"
-            }`}
-            onClick={() => setActiveTab("holidays")}
-          >
-            <span className="text-lg">📅</span>
-            <span>Yearly Holidays</span>
-            {activeTab === "holidays" && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500"></div>
-            )}
-          </button>
-          <button
-            className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all relative ${
-              activeTab === "weekly"
-                ? "text-emerald-600 bg-emerald-50"
-                : "text-slate-500 hover:text-emerald-600 hover:bg-slate-50"
-            }`}
-            onClick={() => setActiveTab("weekly")}
-          >
-            <span className="text-lg">🔄</span>
-            <span>Weekly Off</span>
-            {activeTab === "weekly" && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500"></div>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Holidays Tab */}
-      {activeTab === "holidays" && (
-        <div className="space-y-4">
-          {/* Controls */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-600">Year:</span>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                className="px-4 py-2.5 border rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
-              >
-                {[2024, 2025, 2026].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all font-medium flex items-center gap-2"
-            >
-              <span>+</span> Add Holiday
-            </button>
-          </div>
-
-          {/* Holiday Cards (Mobile) / Table (Desktop) */}
-          <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-            {/* Mobile View - Cards */}
-            <div className="md:hidden divide-y">
-              {holidays.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <span className="text-4xl block mb-2">📅</span>
-                  No holidays configured for {selectedYear}
-                </div>
-              ) : (
-                holidays.map((h) => (
-                  <div key={h.id} className="p-4 hover:bg-slate-50">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="font-medium text-slate-800">{h.name}</div>
-                        <div className="text-sm text-slate-500 mt-1">
-                          {formatDate(h.holidayDate)} ({getDayOfWeek(h.holidayDate)})
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          {h.isPaid && (
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Paid</span>
-                          )}
-                          {h.isOptional && (
-                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Optional</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleEditHoliday(h)} className="text-blue-500">✏️</button>
-                        <button onClick={() => handleDeleteHoliday(h.id)} className="text-red-500">🗑️</button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Desktop View - Table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Day</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Applicable To</th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {holidays.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                        <span className="text-4xl block mb-2">📅</span>
-                        No holidays configured for {selectedYear}
-                      </td>
-                    </tr>
-                  ) : (
-                    holidays.map((h) => (
-                      <tr key={h.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">
-                          {formatDate(h.holidayDate)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                          {getDayOfWeek(h.holidayDate)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">
-                          {h.name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                          {h.applicableEmploymentTypes?.replace(/_/g, ' ') || 'All'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="flex justify-center gap-2">
-                            {h.isPaid && (
-                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Paid</span>
-                            )}
-                            {h.isOptional && (
-                              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Optional</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="flex justify-center gap-2">
-                            <button
-                              onClick={() => handleEditHoliday(h)}
-                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm hover:bg-blue-100 transition-colors"
-                            >
-                              ✏️ Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteHoliday(h.id)}
-                              className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 transition-colors"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Weekly Off Tab */}
-      {activeTab === "weekly" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Weekly Off Configuration */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {['FULL_TIME', 'PART_TIME', 'CONTRACT'].map((empType) => {
-            const config = weeklyOffs.find(w => w.employmentType === empType) || {
-              weeklyOffDays: empType === 'PART_TIME' ? 'SUNDAY' : 'SATURDAY,SUNDAY',
-              alternateSaturdayRule: 'NONE'
-            };
+            const localConfig = localConfigs[empType] || { weeklyOffDays: [], alternateSaturdayRule: 'NONE' };
+            const hasUnsavedChanges = hasChanges[empType];
 
             const typeLabels = {
               'FULL_TIME': { label: 'Full Time', icon: '👔', color: 'blue' },
@@ -347,10 +234,13 @@ function HolidayManagement() {
                 <div className={`bg-gradient-to-r from-${info.color}-500 to-${info.color}-600 px-5 py-4`}>
                   <div className="flex items-center gap-3 text-white">
                     <span className="text-2xl">{info.icon}</span>
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-bold">{info.label}</h3>
                       <p className="text-sm opacity-80">Weekly Off Config</p>
                     </div>
+                    {hasUnsavedChanges && (
+                      <span className="text-xs bg-yellow-500 px-2 py-1 rounded">Unsaved</span>
+                    )}
                   </div>
                 </div>
                 <div className="p-5 space-y-4">
@@ -358,37 +248,42 @@ function HolidayManagement() {
                     <label className="block text-sm font-medium text-slate-600 mb-3">Weekly Off Days</label>
                     <div className="grid grid-cols-2 gap-2">
                       {['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'].map(day => {
-                        const isChecked = config.weeklyOffDays?.includes(day);
+                        const isChecked = localConfig.weeklyOffDays?.includes(day);
+                        const alternateRule = localConfig.alternateSaturdayRule || 'NONE';
+                        const isSaturdayLocked = day === 'SATURDAY' && alternateRule !== 'NONE';
+                        const isDisabled = isSaturdayLocked;
+                        
                         return (
                           <button
                             key={day}
-                            onClick={() => {
-                              const currentDays = config.weeklyOffDays?.split(',').filter(d => d) || [];
-                              let newDays;
-                              if (isChecked) {
-                                newDays = currentDays.filter(d => d !== day);
-                              } else {
-                                newDays = [...currentDays, day];
-                              }
-                              handleSaveWeeklyOff(empType, newDays.join(','), config.alternateSaturdayRule);
-                            }}
+                            onClick={() => handleDayToggle(empType, day)}
+                            disabled={isDisabled}
+                            title={isSaturdayLocked ? 'Saturday is automatically selected when alternate rule is active' : ''}
                             className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                               isChecked
-                                ? 'bg-emerald-500 text-white'
+                                ? isSaturdayLocked
+                                  ? 'bg-emerald-600 text-white cursor-not-allowed opacity-75'
+                                  : 'bg-emerald-500 text-white'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
+                            } ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
                           >
                             {day.slice(0, 3)}
+                            {isSaturdayLocked && <span className="ml-1 text-xs">🔒</span>}
                           </button>
                         );
                       })}
                     </div>
+                    {localConfig.alternateSaturdayRule && localConfig.alternateSaturdayRule !== 'NONE' && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        ℹ️ Saturday is automatically selected when alternate Saturday rule is active
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-2">Alternate Saturday</label>
                     <select
-                      value={config.alternateSaturdayRule || 'NONE'}
-                      onChange={(e) => handleSaveWeeklyOff(empType, config.weeklyOffDays, e.target.value)}
+                      value={localConfig.alternateSaturdayRule || 'NONE'}
+                      onChange={(e) => handleAlternateRuleChange(empType, e.target.value)}
                       className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
                     >
                       <option value="NONE">No alternate rule</option>
@@ -396,113 +291,30 @@ function HolidayManagement() {
                       <option value="SECOND_AND_FOURTH_OFF">2nd & 4th Off</option>
                       <option value="FIRST_AND_THIRD_OFF">1st & 3rd Off</option>
                     </select>
+                    {localConfig.alternateSaturdayRule && localConfig.alternateSaturdayRule !== 'NONE' && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        When alternate rule is active, Saturday is automatically included in weekly off days
+                      </p>
+                    )}
+                  </div>
+                  <div className="pt-2 border-t">
+                    <button
+                      onClick={() => handleSaveWeeklyOff(empType)}
+                      disabled={!hasUnsavedChanges}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                        hasUnsavedChanges
+                          ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-md'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {hasUnsavedChanges ? '💾 Save Configuration' : '✓ Saved'}
+                    </button>
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">
-                {editingHoliday ? '✏️ Edit Holiday' : '➕ Add Holiday'}
-              </h3>
-              <button
-                onClick={() => { setShowAddModal(false); setEditingHoliday(null); }}
-                className="text-white/80 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleAddHoliday} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Holiday Name *</label>
-                <input
-                  type="text"
-                  value={newHoliday.name}
-                  onChange={(e) => setNewHoliday({...newHoliday, name: e.target.value})}
-                  required
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                  placeholder="e.g., Republic Day"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Date *</label>
-                <input
-                  type="date"
-                  value={newHoliday.holidayDate}
-                  onChange={(e) => setNewHoliday({...newHoliday, holidayDate: e.target.value})}
-                  required
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Description</label>
-                <input
-                  type="text"
-                  value={newHoliday.description}
-                  onChange={(e) => setNewHoliday({...newHoliday, description: e.target.value})}
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                  placeholder="Optional description"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Applicable To</label>
-                <select
-                  value={newHoliday.applicableEmploymentTypes}
-                  onChange={(e) => setNewHoliday({...newHoliday, applicableEmploymentTypes: e.target.value})}
-                  className="w-full px-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                >
-                  <option value="">All Employees</option>
-                  <option value="FULL_TIME">Full Time Only</option>
-                  <option value="PART_TIME">Part Time Only</option>
-                  <option value="FULL_TIME,PART_TIME">Full Time & Part Time</option>
-                </select>
-              </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl flex-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newHoliday.isPaid}
-                    onChange={(e) => setNewHoliday({...newHoliday, isPaid: e.target.checked})}
-                    className="w-5 h-5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Paid Holiday</span>
-                </label>
-                <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl flex-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newHoliday.isOptional}
-                    onChange={(e) => setNewHoliday({...newHoliday, isOptional: e.target.checked})}
-                    className="w-5 h-5 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Optional</span>
-                </label>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => { setShowAddModal(false); setEditingHoliday(null); }}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium shadow-md hover:shadow-lg transition-all"
-                >
-                  {editingHoliday ? 'Update' : 'Add'} Holiday
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

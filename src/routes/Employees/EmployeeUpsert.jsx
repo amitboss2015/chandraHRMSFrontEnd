@@ -3,14 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
-const getApiBase = () => {
-  if (import.meta.env?.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  if (localStorage.getItem("baseUrl")) return localStorage.getItem("baseUrl");
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api';
-  return '/api';
-};
-const API_BASE = getApiBase();
+import { API_BASE } from "../../utils/apiConfig";
 
 const getToken = () =>
   sessionStorage.getItem("hrms_access_token") || localStorage.getItem("token") ||
@@ -419,9 +412,13 @@ export default function EmployeeUpsert({ mode = "create" }) {
     const payload = toApi(form);
     try {
       setLoading(true);
-      if (isEdit) await updateEmployee(empCode, payload);
-      else await createEmployee(payload);
-      nav("/employees");
+      if (isEdit) {
+        await updateEmployee(empCode, payload);
+        nav("/employees"); // After edit, go back to employee list
+      } else {
+        await createEmployee(payload);
+        nav("/shifts/assign"); // After creation, redirect to shift assignment
+      }
     } catch (err) {
       console.error(err);
       // Try to parse backend validation errors
@@ -767,13 +764,13 @@ export default function EmployeeUpsert({ mode = "create" }) {
                         placeholder="Monthly salary"
                       />
                     </Field>
-                    <Field label="Increment (₹)">
+                    <Field label="Allowance (₹)">
                       <input
                         type="number"
                         className="input-field"
                         value={form.increment}
                         onChange={(e) => onChange("increment", e.target.value)}
-                        placeholder="Monthly increment"
+                        placeholder="Monthly allowance"
                       />
                     </Field>
                   </>

@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8080/api' : '/api');
+import { API_BASE } from "../../utils/apiConfig";
 
 /**
  * Company Self-Registration Page
@@ -193,8 +192,41 @@ function CompanyRegister() {
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm">
-            {error}
+          <div className="mb-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+              {error}
+            </div>
+            {error.includes("already sent") && form.email && (
+              <p className="mt-2 text-sm text-slate-600">
+                Didn&apos;t receive it?{" "}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setLoading(true);
+                    setError("");
+                    try {
+                      const res = await fetch(`${API_BASE}/public/resend-activation?email=${encodeURIComponent(form.email.trim())}`, {
+                        method: "POST",
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        setSuccess(true);
+                        setRegisteredEmail(form.email.trim());
+                      } else {
+                        setError(data.message || "Failed to resend. Check spam or try again later.");
+                      }
+                    } catch (e) {
+                      setError("Failed to resend. Please try again.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="text-indigo-600 hover:underline font-medium"
+                >
+                  Resend activation email
+                </button>
+              </p>
+            )}
           </div>
         )}
 

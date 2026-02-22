@@ -11,7 +11,7 @@ import {
 } from "./api";
 import Field from "../../components/Field";
 
-export default function MarkLeave({ orgId: propOrgId }) {
+export default function MarkLeave({ orgId: propOrgId, onLeaveCreated }) {
   const orgId = propOrgId || localStorage.getItem("hrms_tenant_id") || localStorage.getItem("orgId") || "SASA001";
 
   const [types, setTypes] = useState([]);
@@ -31,6 +31,7 @@ export default function MarkLeave({ orgId: propOrgId }) {
     remarks: "",
   });
 
+  const [editLeaveId, setEditLeaveId] = useState(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -71,6 +72,42 @@ export default function MarkLeave({ orgId: propOrgId }) {
       .then(setEmployees)
       .catch((e) => console.error("Failed to load employees:", e));
   }, []);
+
+  // Load edit data from sessionStorage on component mount
+  useEffect(() => {
+    const editDataStr = sessionStorage.getItem("editLeaveData");
+    if (editDataStr) {
+      try {
+        const editData = JSON.parse(editDataStr);
+        if (editData.id) {
+          setEditLeaveId(editData.id);
+        }
+        // Pre-fill form with edit data
+        setForm({
+          orgId: editData.orgId || orgId,
+          empId: editData.empId || "",
+          leaveTypeId: editData.leaveTypeId ? String(editData.leaveTypeId) : "",
+          startDate: editData.startDate || "",
+          endDate: editData.endDate || "",
+          durationKind: editData.durationKind || "FULL_DAY",
+          totalDays: editData.totalDays || 1,
+          remarks: editData.remarks || "",
+        });
+        // Set employee query for display
+        const emp = employees.find(e => getEmpCode(e) === editData.empId);
+        if (emp) {
+          setEmpQuery(`${getEmpCode(emp)} — ${getEmpName(emp)}`);
+        } else {
+          setEmpQuery(editData.empId);
+        }
+        // Clear sessionStorage after loading
+        sessionStorage.removeItem("editLeaveData");
+      } catch (e) {
+        console.error("Failed to parse edit data:", e);
+        sessionStorage.removeItem("editLeaveData");
+      }
+    }
+  }, [orgId, employees]);
 
   // Load employee leave history when empId changes
   useEffect(() => {
@@ -137,8 +174,19 @@ export default function MarkLeave({ orgId: propOrgId }) {
     }
     setBusy(true);
     try {
+      // If editing, delete the old leave first
+      if (editLeaveId) {
+        try {
+          await cancelLeave(editLeaveId, "Updated by admin");
+        } catch (e) {
+          console.warn("Failed to delete old leave during edit:", e);
+          // Continue anyway - the backend will handle duplicates
+        }
+      }
+      
       await markLeave({ ...form, leaveTypeId: Number(form.leaveTypeId) });
-      setSuccess("Leave saved successfully!");
+      setSuccess(editLeaveId ? "Leave updated successfully!" : "Leave saved successfully!");
+      setEditLeaveId(null);
       setForm((f) => ({
         ...f,
         startDate: "",
@@ -146,6 +194,7 @@ export default function MarkLeave({ orgId: propOrgId }) {
         totalDays: 1,
         remarks: "",
       }));
+      setEmpQuery("");
       setPreview(null);
       // Refresh history and balance
       listEmployeeLeaves(orgId, form.empId).then(setHistory).catch(() => {});
@@ -155,6 +204,12 @@ export default function MarkLeave({ orgId: propOrgId }) {
         getBalanceForType(orgId, form.empId, form.leaveTypeId, year, month)
           .then(setCurrentBalance)
           .catch(() => {});
+      }
+      // Notify parent to refresh leave list
+      if (onLeaveCreated) {
+        setTimeout(() => {
+          onLeaveCreated();
+        }, 500);
       }
     } catch (e) {
       setError(e.message);
@@ -180,7 +235,9 @@ export default function MarkLeave({ orgId: propOrgId }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-slate-800">Mark Leave (Admin)</h2>
+      <h2 className="text-xl font-bold text-slate-800">
+        {editLeaveId ? "Edit Leave" : "Mark Leave (Admin)"}
+      </h2>
 
       {/* Error/Success Messages */}
       {error && (
