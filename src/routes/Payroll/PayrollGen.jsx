@@ -445,23 +445,23 @@ function PayrollGen() {
 
   const getStatusBadge = (status) => {
     const styles = {
-      DRAFT: 'bg-gray-100 text-gray-800',
-      GENERATED: 'bg-yellow-100 text-yellow-800',
-      APPROVED: 'bg-blue-100 text-blue-800',
-      PAID: 'bg-green-100 text-green-800',
-      CANCELLED: 'bg-red-100 text-red-800'
+      DRAFT: 'bg-slate-100 text-slate-700 border border-slate-200',
+      GENERATED: 'bg-amber-100 text-amber-800 border border-amber-200',
+      APPROVED: 'bg-blue-100 text-blue-700 border border-blue-200',
+      PAID: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+      CANCELLED: 'bg-red-100 text-red-700 border border-red-200'
     };
     return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${styles[status] || styles.DRAFT}`}>
+      <span className={`px-2.5 py-1 rounded-md text-xs font-semibold ${styles[status] || styles.DRAFT}`}>
         {status}
       </span>
     );
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
       {/* Header Controls */}
-      <div className="flex flex-wrap items-center gap-4 mb-6 bg-white p-4 rounded-lg shadow">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-6 bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-600">Month:</label>
           <select 
@@ -567,7 +567,7 @@ function PayrollGen() {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 mb-6">
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
             <p className="text-xs text-gray-500 uppercase">Employees</p>
             <p className="text-2xl font-bold text-blue-600">{summary.employeeCount}</p>
@@ -662,48 +662,35 @@ function PayrollGen() {
           <p className="text-sm mt-2">Click "Generate Payroll" to create payroll for this month.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="p-4 border-b bg-gray-50">
-            <h3 className="font-bold text-lg">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+          <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-slate-50 to-gray-50">
+            <h3 className="font-bold text-lg sm:text-xl text-slate-800">
               Payment Sheet - {getMonthName(month)} {year}
             </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Review and verify payroll details. Click on employee row to view loan/leave details.
+            <p className="text-sm text-slate-600 mt-1 flex items-center gap-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                👆 Click any row for full details
+              </span>
+              <span className="text-slate-500">•</span>
+              <span>Scroll right → for more columns</span>
             </p>
             
-            {/* Bilingual Instructions - Loan Adjustment */}
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start gap-2">
-                <span className="text-blue-600 text-lg">ℹ️</span>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-blue-900 mb-1">
-                    Loan Adjustment Information / ऋण समायोजन जानकारी:
-                  </p>
-                  <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
-                    <li>
-                      <strong>English:</strong> Loan deduction is automatically adjusted to prevent negative net salary. 
-                      If scheduled loan exceeds available balance, only the maximum deductible amount is deducted. 
-                      Remaining loan balance stays outstanding and will be adjusted in future payrolls.
-                    </li>
-                    <li>
-                      <strong>Hindi:</strong> नेगेटिव नेट सैलरी को रोकने के लिए ऋण कटौती स्वचालित रूप से समायोजित की जाती है। 
-                      यदि निर्धारित ऋण उपलब्ध बैलेंस से अधिक है, तो केवल अधिकतम कटौती योग्य राशि काटी जाती है। 
-                      शेष ऋण बैलेंस बकाया रहता है और भविष्य के पेरोल में समायोजित किया जाएगा।
-                    </li>
-                    <li className="mt-2">
-                      <strong>For Non-EMI Loans:</strong> Admin can manually type the loan amount to deduct in the loan management screen.
-                      <strong> / गैर-EMI ऋण के लिए:</strong> व्यवस्थापक लोन मैनेजमेंट स्क्रीन में कटौती करने के लिए ऋण राशि मैन्युअल रूप से टाइप कर सकता है।
-                    </li>
-                  </ul>
-                </div>
+            {/* Bilingual Instructions - Collapsible */}
+            <details className="mt-3 group">
+              <summary className="cursor-pointer text-sm font-medium text-blue-700 hover:text-blue-800 flex items-center gap-2">
+                <span className="group-open:rotate-90 transition-transform">▶</span>
+                Loan Adjustment Info
+              </summary>
+              <div className="mt-2 p-3 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-800">
+                <p>Loan deduction is auto-adjusted to prevent negative net salary. Remaining balance carries to future payrolls.</p>
               </div>
-            </div>
+            </details>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="overflow-x-auto scroll-smooth" style={{ scrollbarWidth: 'thin' }}>
+            <table className="min-w-max text-sm">
               <thead className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
                 <tr>
-                  <th className="px-2 py-3 text-center">
+                  <th className="px-3 py-3.5 text-center sticky left-0 bg-slate-700 z-10">
                     <input
                       type="checkbox"
                       checked={payrolls.length > 0 && selectedPayrollIds.length === payrolls.length}
@@ -715,52 +702,38 @@ function PayrollGen() {
                         }
                       }}
                       onClick={e => e.stopPropagation()}
-                      className="cursor-pointer"
+                      className="cursor-pointer rounded"
                       title="Select All"
                     />
                   </th>
-                  <th className="px-2 py-3 text-left">SR.</th>
-                  <th className="px-2 py-3 text-left">EMP NAME</th>
-                  <th className="px-2 py-3 text-left">EMP ID</th>
-                  <th className="px-2 py-3 text-right">BASIC</th>
-                  <th className="px-2 py-3 text-right">Allowance</th>
-                  <th className="px-2 py-3 text-right">FINAL PAY</th>
-                  <th className="px-2 py-3 text-center">W.DAY</th>
-                  <th className="px-2 py-3 text-center">PRES.</th>
-                  <th className="px-2 py-3 text-center">ABS.</th>
-                  <th className="px-2 py-3 text-right">W.DAY AMT</th>
-                  <th className="px-2 py-3 text-center" title="OT Days (worked on holiday/weekly off)">OT DAY</th>
-                  <th className="px-2 py-3 text-center" title="OT Hours (extra hours worked)">OT HRS</th>
-                  <th className="px-2 py-3 text-right" title="OT Day Amount">OT DAY AMT</th>
-                  <th className="px-2 py-3 text-right" title="OT Hour Amount">OT HR AMT</th>
-                  <th className="px-2 py-3 text-center bg-green-600 text-white" title="Paid Leave Days">PAID LEAVE</th>
-                  <th className="px-2 py-3 text-right bg-green-600 text-white" title="Paid Leave Charges">PAID LEAVE CHG</th>
-                  <th className="px-2 py-3 text-center bg-orange-600 text-white" title="Late Hours">LATE HRS</th>
-                  <th className="px-2 py-3 text-right bg-orange-600 text-white" title="Late Hour Charges (deduction)">LATE CHG</th>
-                  <th className="px-2 py-3 text-center bg-orange-500 text-white" title="Early Checkout Hours">EARLY HRS</th>
-                  <th className="px-2 py-3 text-right bg-orange-500 text-white" title="Early Checkout Charges (deduction)">EARLY CHG</th>
-                  <th className="px-2 py-3 text-right bg-green-700">GROSS</th>
-                  <th className="px-2 py-3 text-right" title="ESI 0.75% (if salary ≤ ₹21,000)">ESI</th>
-                  <th className="px-2 py-3 text-right" title="PF Employee 6%">PF OWN</th>
-                  <th className="px-2 py-3 text-right" title="PF Company 6%">PF CO.</th>
-                  <th className="px-2 py-3 text-right bg-amber-600">LOAN EMI</th>
-                  <th className="px-2 py-3 text-right bg-orange-600">ADV</th>
-                  <th className="px-2 py-3 text-right">DUE</th>
-                  <th className="px-2 py-3 text-right bg-blue-700">NET SAL</th>
-                  <th className="px-2 py-3 text-left">REMARKS</th>
-                  <th className="px-2 py-3 text-center">UPI ID</th>
-                  <th className="px-2 py-3 text-center">STATUS</th>
-                  <th className="px-2 py-3 text-center">ACTIONS</th>
+                  <th className="px-3 py-3.5 text-left sticky left-9 bg-slate-700 z-10 min-w-[40px]">#</th>
+                  <th className="px-4 py-3.5 text-left sticky left-[72px] bg-slate-700 z-10 min-w-[140px]">EMP NAME</th>
+                  <th className="px-3 py-3.5 text-left min-w-[90px]">EMP ID</th>
+                  <th className="px-3 py-3.5 text-center min-w-[60px]">PRES.</th>
+                  <th className="px-3 py-3.5 text-center min-w-[55px]" title="Working Days">W.DAY</th>
+                  <th className="px-3 py-3.5 text-right min-w-[85px]">BASIC</th>
+                  <th className="px-3 py-3.5 text-right min-w-[85px]">ALLOW.</th>
+                  <th className="px-3 py-3.5 text-right min-w-[75px]" title="OT Days">OT D</th>
+                  <th className="px-3 py-3.5 text-right min-w-[70px]" title="OT Hours">OT H</th>
+                  <th className="px-3 py-3.5 text-center min-w-[65px]" title="Paid Leave">LEAVE</th>
+                  <th className="px-3 py-3.5 text-center min-w-[65px]" title="Late Hours">LATE H</th>
+                  <th className="px-3 py-3.5 text-right min-w-[85px]">GROSS</th>
+                  <th className="px-3 py-3.5 text-right min-w-[75px]">PF</th>
+                  <th className="px-3 py-3.5 text-right min-w-[80px]" title="Loan EMI">EMI</th>
+                  <th className="px-3 py-3.5 text-right min-w-[75px]">DUE</th>
+                  <th className="px-3 py-3.5 text-right min-w-[95px] font-semibold bg-slate-600">NET SAL</th>
+                  <th className="px-3 py-3.5 text-center min-w-[90px]">STATUS</th>
+                  <th className="px-3 py-3.5 text-center min-w-[100px] sticky right-0 bg-slate-700 z-10">ACTIONS</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-100">
                 {payrolls.map((p, idx) => (
                   <tr 
                     key={p.id} 
-                    className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 cursor-pointer`}
+                    className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/80 cursor-pointer transition-colors`}
                     onClick={() => viewDetails(p)}
                   >
-                    <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
+                    <td className={`px-3 py-2.5 text-center sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} group-hover:bg-blue-50/80`} onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedPayrollIds.includes(p.id)}
@@ -771,125 +744,50 @@ function PayrollGen() {
                             setSelectedPayrollIds(selectedPayrollIds.filter(id => id !== p.id));
                           }
                         }}
-                        className="cursor-pointer"
+                        className="cursor-pointer rounded"
                       />
                     </td>
-                    <td className="px-2 py-2 font-medium">{idx + 1}</td>
-                    <td className="px-2 py-2 font-medium text-gray-900">{p.empName || p.empId}</td>
-                    <td className="px-2 py-2 text-gray-600">{p.empId}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(p.basicSalary)}</td>
-                    <td className="px-2 py-2 text-right text-purple-600">{formatCurrency(p.increment)}</td>
-                    <td className="px-2 py-2 text-right font-medium">{formatCurrency(p.finalPayment)}</td>
-                    <td className="px-2 py-2 text-center">{p.totalWorkingDays || 0}</td>
-                    <td className="px-2 py-2 text-center font-medium text-green-600">{p.presentDays || 0}</td>
-                    <td className="px-2 py-2 text-center text-red-600">{p.absentDays || 0}</td>
-                    <td className="px-2 py-2 text-right">{formatCurrency(p.workingDayAmount)}</td>
-                    <td className="px-2 py-2 text-center">{p.overtimeDays || 0}</td>
-                    <td className="px-2 py-2 text-center">{p.overtimeHours ? parseFloat(p.overtimeHours).toFixed(2) : '0.00'}</td>
-                    <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeDayAmount)}</td>
-                    <td className="px-2 py-2 text-right text-indigo-600">{formatCurrency(p.overtimeHourAmount)}</td>
-                    <td className="px-2 py-2 text-center bg-green-50 text-green-700 font-medium">
-                      {p.paidLeaveDays || 0}
-                    </td>
-                    <td className="px-2 py-2 text-right bg-green-50 text-green-700 font-medium">
-                      {formatCurrency(p.paidLeaveCharges || 0)}
-                    </td>
-                    <td className="px-2 py-2 text-center bg-orange-50 text-orange-700 font-medium">
-                      {p.totalLateHours ? parseFloat(p.totalLateHours).toFixed(2) : '0.00'}
-                    </td>
-                    <td className="px-2 py-2 text-right bg-orange-50 text-orange-700 font-medium">
-                      {formatCurrency(p.lateHourCharges)}
-                    </td>
-                    <td className="px-2 py-2 text-center bg-orange-50 text-orange-700 font-medium">
-                      {p.totalEarlyHours ? parseFloat(p.totalEarlyHours).toFixed(2) : '0.00'}
-                    </td>
-                    <td className="px-2 py-2 text-right bg-orange-50 text-orange-700 font-medium">
-                      {formatCurrency(p.earlyHourCharges || 0)}
-                    </td>
-                    <td className="px-2 py-2 text-right font-bold text-green-700 bg-green-50">
-                      {formatCurrency(p.grossSalary)}
-                    </td>
-                    <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.esiEmployee)}</td>
-                    <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.pfEmployee)}</td>
-                    <td className="px-2 py-2 text-right text-red-600">{formatCurrency(p.pfCompany)}</td>
-                    <td className="px-2 py-2 text-right text-amber-700 bg-amber-50 font-medium">
-                      {formatCurrency(p.loanDeduction)}
-                    </td>
-                    <td className="px-2 py-2 text-right text-orange-700 bg-orange-50">
-                      {formatCurrency(p.advance)}
-                    </td>
+                    <td className={`px-3 py-2.5 font-medium text-slate-600 sticky left-9 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} group-hover:bg-blue-50/80`}>{idx + 1}</td>
+                    <td className={`px-4 py-2.5 font-medium text-slate-900 sticky left-[72px] z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} group-hover:bg-blue-50/80`}>{p.empName || p.empId}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{p.empId}</td>
+                    <td className="px-3 py-2.5 text-center font-semibold text-green-600">{p.presentDays || 0}</td>
+                    <td className="px-3 py-2.5 text-center text-slate-600">{p.totalWorkingDays || 0}</td>
+                    <td className="px-3 py-2.5 text-right text-slate-700">{formatCurrency(p.basicSalary)}</td>
+                    <td className="px-3 py-2.5 text-right text-purple-600">{formatCurrency(p.increment)}</td>
+                    <td className="px-3 py-2.5 text-right text-indigo-600">{p.overtimeDays || 0}</td>
+                    <td className="px-3 py-2.5 text-right text-indigo-600">{p.overtimeHours ? parseFloat(p.overtimeHours).toFixed(1) : '0'}</td>
+                    <td className="px-3 py-2.5 text-center text-green-600">{p.paidLeaveDays || 0}</td>
+                    <td className="px-3 py-2.5 text-center text-orange-600">{p.totalLateHours ? parseFloat(p.totalLateHours).toFixed(1) : '0'}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-green-700">{formatCurrency(p.grossSalary)}</td>
+                    <td className="px-3 py-2.5 text-right text-red-600">{formatCurrency((p.pfEmployee || 0) + (p.esiEmployee || 0))}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-700">{formatCurrency(p.loanDeduction)}</td>
                     <td 
-                      className={`px-2 py-2 text-right ${p.status === 'DRAFT' ? 'cursor-pointer hover:bg-blue-100 text-blue-700 font-medium relative group' : 'text-red-600'}`}
+                      className={`px-3 py-2.5 text-right ${p.status === 'DRAFT' ? 'cursor-pointer hover:bg-blue-100 text-blue-700 font-medium' : 'text-red-600'}`}
                       onClick={e => {
                         e.stopPropagation();
-                        if (p.status === 'DRAFT') {
-                          console.log('DUE column clicked for payroll:', p);
-                          openManageDuesModal(p);
-                        }
+                        if (p.status === 'DRAFT') openManageDuesModal(p);
                       }}
-                      title={p.status === 'DRAFT' ? 'Click to add/manage pending dues' : ''}
+                      title={p.status === 'DRAFT' ? 'Click to manage dues' : ''}
                     >
-                      {p.status === 'DRAFT' ? (
-                        <span className="flex items-center justify-end gap-1 hover:text-blue-900">
-                          {formatCurrency(p.due)}
-                          <span className="text-xs opacity-70 group-hover:opacity-100">✏️</span>
-                        </span>
-                      ) : (
-                        formatCurrency(p.due)
-                      )}
+                      {p.status === 'DRAFT' ? `${formatCurrency(p.due)} ✏️` : formatCurrency(p.due)}
                     </td>
-                    <td className="px-2 py-2 text-right font-bold text-blue-700 bg-blue-50">
-                      {formatCurrency(p.netSalary)}
-                    </td>
-                    <td className="px-2 py-2 text-left text-xs text-gray-600 max-w-[120px] truncate" title={p.remarks || ''}>
-                      {p.remarks || '-'}
-                    </td>
-                    <td className="px-2 py-2 text-center text-xs text-gray-600">
-                      {p.upiId ? (
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded" title={p.upiId}>
-                          {p.upiId.length > 15 ? p.upiId.substring(0, 15) + '...' : p.upiId}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
+                    <td className="px-3 py-2.5 text-right font-bold text-blue-700 bg-blue-50/80">{formatCurrency(p.netSalary)}</td>
+                    <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
                       {getStatusBadge(p.status)}
                     </td>
-                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                    <td className={`px-3 py-2.5 sticky right-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} group-hover:bg-blue-50/80`} onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1 justify-center">
                         {p.status === 'DRAFT' && (
                           <>
-                            {/* Edit button removed - loans managed in loan management screen */}
-                            <button 
-                              onClick={() => approvePayroll(p.id)}
-                              className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                              title="Approve"
-                            >
-                              ✓
-                            </button>
-                            <button 
-                              onClick={() => deletePayroll(p.id)}
-                              className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                              title="Delete"
-                            >
-                              🗑️
-                            </button>
+                            <button onClick={() => approvePayroll(p.id)} className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600" title="Approve">✓</button>
+                            <button onClick={() => deletePayroll(p.id)} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200" title="Delete">🗑️</button>
                           </>
                         )}
                         {p.status === 'APPROVED' && (
-                          <button 
-                            onClick={() => openPaymentModal(p)}
-                            className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-                            title="Process Payment"
-                          >
-                            💳 Pay
-                          </button>
+                          <button onClick={() => openPaymentModal(p)} className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600" title="Pay">💳 Pay</button>
                         )}
                         {p.status === 'PAID' && (
-                          <span className="text-xs text-green-600 flex items-center gap-1">
-                            ✓ {p.paymentMode || 'Paid'}
-                          </span>
+                          <span className="text-xs text-green-600">✓ {p.paymentMode || 'Paid'}</span>
                         )}
                       </div>
                     </td>
@@ -897,60 +795,31 @@ function PayrollGen() {
                 ))}
               </tbody>
               {/* Totals Row */}
-              <tfoot className="bg-slate-100 font-bold">
+              <tfoot className="bg-slate-200 font-bold">
                 <tr>
-                  <td colSpan={9} className="px-2 py-3 text-right">TOTALS:</td>
-                  <td className="px-2 py-3 text-right">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.workingDayAmount || 0), 0))}
-                  </td>
-                  <td></td>{/* OT Days - no sum */}
+                  <td colSpan={4} className="px-2 py-3 text-right sticky left-0 bg-slate-200">TOTALS:</td>
                   <td className="px-2 py-3 text-center">
-                    {payrolls.reduce((s, p) => s + parseFloat(p.overtimeHours || 0), 0).toFixed(2)}
+                    {payrolls.reduce((s, p) => s + (p.presentDays || 0), 0)}
                   </td>
-                  <td className="px-2 py-3 text-right text-indigo-600">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeDayAmount || 0), 0))}
-                  </td>
-                  <td className="px-2 py-3 text-right text-indigo-600">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.overtimeHourAmount || 0), 0))}
-                  </td>
-                  {/* Paid Leave Totals */}
-                  <td className="px-2 py-3 text-center bg-green-100 text-green-700">
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td className="px-2 py-3 text-center">{payrolls.reduce((s, p) => s + (p.overtimeDays || 0), 0)}</td>
+                  <td className="px-2 py-3 text-right">{payrolls.reduce((s, p) => s + parseFloat(p.overtimeHours || 0), 0).toFixed(1)}</td>
+                  <td className="px-2 py-3 text-center">
                     {payrolls.reduce((s, p) => s + (p.paidLeaveDays || 0), 0)}
                   </td>
-                  <td className="px-2 py-3 text-right bg-green-100 text-green-700">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.paidLeaveCharges || 0), 0))}
+                  <td className="px-2 py-3 text-right">
+                    {payrolls.reduce((s, p) => s + parseFloat(p.totalLateHours || 0), 0).toFixed(1)}
                   </td>
-                  {/* Late Hours Totals */}
-                  <td className="px-2 py-3 text-center bg-orange-100 text-orange-700">
-                    {payrolls.reduce((s, p) => s + parseFloat(p.totalLateHours || 0), 0).toFixed(2)}
-                  </td>
-                  <td className="px-2 py-3 text-right bg-orange-100 text-orange-700">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.lateHourCharges || 0), 0))}
-                  </td>
-                  {/* Early Hours Totals */}
-                  <td className="px-2 py-3 text-center bg-orange-100 text-orange-700">
-                    {payrolls.reduce((s, p) => s + parseFloat(p.totalEarlyHours || 0), 0).toFixed(2)}
-                  </td>
-                  <td className="px-2 py-3 text-right bg-orange-100 text-orange-700">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.earlyHourCharges || 0), 0))}
-                  </td>
-                  <td className="px-2 py-3 text-right text-green-700 bg-green-100">
+                  <td className="px-2 py-3 text-right text-green-700">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.grossSalary || 0), 0))}
                   </td>
                   <td className="px-2 py-3 text-right text-red-600">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.esiEmployee || 0), 0))}
+                    {formatCurrency(payrolls.reduce((s, p) => s + (p.pfEmployee || 0) + (p.esiEmployee || 0), 0))}
                   </td>
-                  <td className="px-2 py-3 text-right text-red-600">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.pfEmployee || 0), 0))}
-                  </td>
-                  <td className="px-2 py-3 text-right text-red-600">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.pfCompany || 0), 0))}
-                  </td>
-                  <td className="px-2 py-3 text-right text-amber-700 bg-amber-100">
+                  <td className="px-2 py-3 text-right text-amber-700">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.loanDeduction || 0), 0))}
-                  </td>
-                  <td className="px-2 py-3 text-right text-orange-700 bg-orange-100">
-                    {formatCurrency(payrolls.reduce((s, p) => s + (p.advance || 0), 0))}
                   </td>
                   <td className="px-2 py-3 text-right text-red-600">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.due || 0), 0))}
@@ -958,7 +827,7 @@ function PayrollGen() {
                   <td className="px-2 py-3 text-right text-blue-700 bg-blue-100">
                     {formatCurrency(payrolls.reduce((s, p) => s + (p.netSalary || 0), 0))}
                   </td>
-                  <td colSpan={3}></td>
+                  <td colSpan={2}></td>
                 </tr>
               </tfoot>
             </table>
@@ -966,174 +835,162 @@ function PayrollGen() {
         </div>
       )}
 
-      {/* Details Modal */}
+      {/* Details Modal - Full in-depth breakdown */}
       {showDetailsModal && payrollDetails && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-4 border-b bg-gray-50 flex justify-between items-center sticky top-0">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 overflow-hidden">
+            {/* Header */}
+            <div className="p-5 bg-gradient-to-r from-slate-700 to-slate-800 text-white flex justify-between items-start sticky top-0 z-10">
               <div>
-                <h3 className="text-lg font-bold">Payroll Details - {payrollDetails.empName}</h3>
-                <p className="text-sm text-gray-500">Emp Code: {payrollDetails.empId} | {getMonthName(payrollDetails.month)} {payrollDetails.year}</p>
+                <h3 className="text-xl font-bold tracking-tight">{payrollDetails.empName}</h3>
+                <p className="text-slate-300 text-sm mt-1">Emp: {payrollDetails.empId} • {getMonthName(payrollDetails.month)} {payrollDetails.year}</p>
               </div>
-              <button onClick={() => setShowDetailsModal(false)} className="text-2xl text-gray-500 hover:text-gray-700">×</button>
+              <button onClick={() => setShowDetailsModal(false)} className="text-2xl text-white/80 hover:text-white p-1 -m-1">×</button>
             </div>
             
-            <div className="p-6 space-y-6">
-              {/* Salary Structure */}
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-bold text-blue-800 mb-3">💰 Salary Structure</h4>
-                <div className="grid grid-cols-3 gap-4">
+            <div className="p-5 sm:p-6 space-y-5">
+              {/* 1. Basic & Allowance */}
+              <section className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Basic & Allowance</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   <div>
-                    <span className="text-sm text-blue-600">Basic Salary</span>
-                    <p className="font-bold">{formatCurrency(payrollDetails.salaryStructure?.basicSalary)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Basic Salary</p>
+                    <p className="text-lg font-bold text-slate-800">{formatCurrency(payrollDetails.salaryStructure?.basicSalary)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-blue-600">Allowance</span>
-                    <p className="font-bold">{formatCurrency(payrollDetails.salaryStructure?.increment)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Allowance</p>
+                    <p className="text-lg font-bold text-purple-600">{formatCurrency(payrollDetails.salaryStructure?.increment)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-blue-600">Final Payment</span>
-                    <p className="font-bold text-lg">{formatCurrency(payrollDetails.salaryStructure?.finalPayment)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Final Pay (Monthly)</p>
+                    <p className="text-lg font-bold text-slate-900">{formatCurrency(payrollDetails.salaryStructure?.finalPayment)}</p>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Attendance */}
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h4 className="font-bold text-green-800 mb-3">📅 Attendance Summary</h4>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <span className="text-sm text-green-600">Working Days</span>
-                    <p className="font-bold">{payrollDetails.attendance?.totalWorkingDays}</p>
+              {/* 2. Attendance - Present, OT, Leaves */}
+              <section className="bg-green-50/80 rounded-xl p-4 border border-green-100">
+                <h4 className="text-sm font-bold text-green-800 uppercase tracking-wider mb-3">Attendance</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500">Working Days</p>
+                    <p className="text-xl font-bold text-slate-700">{payrollDetails.attendance?.totalWorkingDays || 0}</p>
                   </div>
-                  <div>
-                    <span className="text-sm text-green-600">Present</span>
-                    <p className="font-bold text-green-700">{payrollDetails.attendance?.presentDays}</p>
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500">Present Days</p>
+                    <p className="text-xl font-bold text-green-600">{payrollDetails.attendance?.presentDays || 0}</p>
                   </div>
-                  <div>
-                    <span className="text-sm text-green-600">Absent</span>
-                    <p className="font-bold text-red-600">{payrollDetails.attendance?.absentDays}</p>
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500">Absent</p>
+                    <p className="text-xl font-bold text-red-600">{payrollDetails.attendance?.absentDays || 0}</p>
                   </div>
-                  <div>
-                    <span className="text-sm text-green-600">Late Days</span>
-                    <p className="font-bold text-yellow-600">{payrollDetails.attendance?.lateDays}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-green-600">Half Days</span>
-                    <p className="font-bold">{payrollDetails.attendance?.halfDays}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-green-600">Weekly Offs</span>
-                    <p className="font-bold">{payrollDetails.attendance?.weeklyOffDays}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-green-600">Holidays</span>
-                    <p className="font-bold">{payrollDetails.attendance?.holidayDays}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-green-600">OT Days/Hours</span>
-                    <p className="font-bold">{payrollDetails.attendance?.overtimeDays} / {payrollDetails.attendance?.overtimeHours}h</p>
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500">Paid Leaves</p>
+                    <p className="text-xl font-bold text-blue-600">{(payrollDetails.attendance?.paidLeaveDays ?? payrollDetails.attendance?.leaveDays) || 0}</p>
                   </div>
                 </div>
-                {/* Late Hours Row */}
-                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-orange-200">
-                  <div className="bg-orange-100 p-3 rounded-lg">
-                    <span className="text-sm text-orange-600">Late Days</span>
-                    <p className="font-bold text-orange-700">{payrollDetails.attendance?.lateDays || 0}</p>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-indigo-50 p-3 rounded-lg">
+                    <p className="text-xs text-indigo-600">OT Days</p>
+                    <p className="text-lg font-bold text-indigo-700">{payrollDetails.attendance?.overtimeDays || 0}</p>
+                  </div>
+                  <div className="bg-indigo-50 p-3 rounded-lg">
+                    <p className="text-xs text-indigo-600">OT Hours</p>
+                    <p className="text-lg font-bold text-indigo-700">{payrollDetails.attendance?.overtimeHours || '0'} hrs</p>
                   </div>
                   <div className="bg-orange-100 p-3 rounded-lg">
-                    <span className="text-sm text-orange-600">Total Late Hours</span>
-                    <p className="font-bold text-orange-700">{payrollDetails.attendance?.totalLateHours || 0}h</p>
+                    <p className="text-xs text-orange-600">Late Hours</p>
+                    <p className="text-lg font-bold text-orange-700">{payrollDetails.attendance?.totalLateHours || 0} hrs</p>
+                  </div>
+                  <div className="bg-orange-100 p-3 rounded-lg">
+                    <p className="text-xs text-orange-600">Late Charges (Deduction)</p>
+                    <p className="text-lg font-bold text-orange-700">{formatCurrency(payrollDetails.attendance?.lateHourCharges)}</p>
                   </div>
                 </div>
-                {/* Early Checkout Row */}
                 {(payrollDetails.attendance?.earlyOutDays > 0 || payrollDetails.attendance?.totalEarlyHours > 0) && (
-                  <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-orange-200">
-                    <div className="bg-orange-100 p-3 rounded-lg">
-                      <span className="text-sm text-orange-600">Early Out Days</span>
-                      <p className="font-bold text-orange-700">{payrollDetails.attendance?.earlyOutDays || 0}</p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="bg-amber-50 p-3 rounded-lg">
+                      <p className="text-xs text-amber-600">Early Out Hours</p>
+                      <p className="font-bold text-amber-700">{payrollDetails.attendance?.totalEarlyHours || 0} hrs</p>
                     </div>
-                    <div className="bg-orange-100 p-3 rounded-lg">
-                      <span className="text-sm text-orange-600">Total Early Hours</span>
-                      <p className="font-bold text-orange-700">{payrollDetails.attendance?.totalEarlyHours || 0}h</p>
+                    <div className="bg-amber-50 p-3 rounded-lg">
+                      <p className="text-xs text-amber-600">Early Charges (Deduction)</p>
+                      <p className="font-bold text-amber-700">{formatCurrency(payrollDetails.attendance?.earlyHourCharges || 0)}</p>
                     </div>
                   </div>
                 )}
-              </div>
+              </section>
 
-              {/* Loan Info */}
-              {payrollDetails.loanInfo && (
-                <div className="bg-amber-50 p-4 rounded-lg">
-                  <h4 className="font-bold text-amber-800 mb-3">🏦 Loan Information</h4>
-                  <div className="flex items-center justify-between mb-3">
+              {/* 3. Loan - Active, EMI Deducted */}
+              {(payrollDetails.loanInfo?.activeLoansCount > 0 || payrollDetails.advanceAndDue?.loanEmiInAdvance > 0) && (
+                <section className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                  <h4 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-3">Loan & EMI</h4>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
                     <div>
-                      <span className="text-sm text-amber-600">Active Loans</span>
-                      <p className="font-bold text-lg">{payrollDetails.loanInfo?.activeLoansCount}</p>
+                      <p className="text-xs text-amber-600">Active Loans</p>
+                      <p className="text-lg font-bold text-amber-700">{payrollDetails.loanInfo?.activeLoansCount || 0}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-amber-600">Monthly EMI Deduction</span>
-                      <p className="font-bold text-lg text-amber-700">{formatCurrency(payrollDetails.loanInfo?.monthlyEmi)}</p>
+                      <p className="text-xs text-amber-600">EMI Deducted This Month</p>
+                      <p className="text-lg font-bold text-amber-700">{formatCurrency(payrollDetails.loanInfo?.monthlyEmi ?? payrollDetails.advanceAndDue?.loanEmiInAdvance)}</p>
                     </div>
                   </div>
                   {payrollDetails.loanInfo?.activeLoans?.length > 0 && (
-                    <div className="mt-3 border-t pt-3">
-                      <p className="text-sm font-medium text-amber-700 mb-2">Loan Details:</p>
-                      <div className="space-y-2">
-                        {payrollDetails.loanInfo.activeLoans.map((loan, i) => (
-                          <div key={i} className="flex justify-between text-sm bg-white p-2 rounded">
-                            <span>{loan.loanType}</span>
-                            <span>EMI: {formatCurrency(loan.emiAmount)}</span>
-                            <span>Outstanding: {formatCurrency(loan.outstandingBalance)}</span>
-                            <span>{loan.emisPaid}/{loan.tenureMonths} EMIs</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="space-y-2">
+                      {payrollDetails.loanInfo.activeLoans.map((loan, i) => (
+                        <div key={i} className="flex flex-wrap justify-between items-center gap-2 bg-white p-3 rounded-lg border border-amber-200 text-sm">
+                          <span className="font-medium">{loan.loanType}</span>
+                          <span>EMI: {formatCurrency(loan.emiAmount)}</span>
+                          <span className="text-amber-700">Outstanding: {formatCurrency(loan.outstandingBalance)}</span>
+                          <span className="text-slate-500">{loan.emisPaid}/{loan.tenureMonths} paid</span>
+                        </div>
+                      ))}
                     </div>
                   )}
-                </div>
+                </section>
               )}
 
-              {/* Advance and Due */}
-              <div className="bg-orange-50 p-4 rounded-lg">
-                <h4 className="font-bold text-orange-800 mb-3">💸 Advance & Due</h4>
-                <div className="grid grid-cols-4 gap-4">
+              {/* 4. Advance & Due */}
+              <section className="bg-orange-50/80 rounded-xl p-4 border border-orange-100">
+                <h4 className="text-sm font-bold text-orange-800 uppercase tracking-wider mb-3">Advance & Due</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
-                    <span className="text-sm text-orange-600">Loan EMI (in ADV)</span>
+                    <p className="text-xs text-orange-600">Loan EMI (in ADV)</p>
                     <p className="font-bold text-amber-700">{formatCurrency(payrollDetails.advanceAndDue?.loanEmiInAdvance)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-orange-600">Manual Advance</span>
+                    <p className="text-xs text-orange-600">Manual Advance</p>
                     <p className="font-bold">{formatCurrency(payrollDetails.advanceAndDue?.manualAdvance)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-orange-600">Total ADV</span>
+                    <p className="text-xs text-orange-600">Total Advance</p>
                     <p className="font-bold text-orange-700">{formatCurrency(payrollDetails.advanceAndDue?.advance)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-orange-600">Due</span>
+                    <p className="text-xs text-orange-600">Pending Due</p>
                     <p className="font-bold text-red-600">{formatCurrency(payrollDetails.advanceAndDue?.due)}</p>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Net Calculation */}
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <h4 className="font-bold text-purple-800 mb-3">📊 Final Calculation</h4>
+              {/* 5. Final Net */}
+              <section className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border-2 border-blue-200">
+                <h4 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-3">Final Calculation</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <span className="text-sm text-purple-600">Gross Salary</span>
-                    <p className="font-bold text-green-700 text-xl">{formatCurrency(payrollDetails.netCalculation?.grossSalary)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Gross Salary</p>
+                    <p className="text-xl font-bold text-green-700">{formatCurrency(payrollDetails.netCalculation?.grossSalary)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-purple-600">Total Deductions</span>
-                    <p className="font-bold text-red-600 text-xl">{formatCurrency(payrollDetails.netCalculation?.totalDeductions)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Total Deductions</p>
+                    <p className="text-xl font-bold text-red-600">{formatCurrency(payrollDetails.netCalculation?.totalDeductions)}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-purple-600">Net Salary</span>
-                    <p className="font-bold text-blue-700 text-2xl">{formatCurrency(payrollDetails.netCalculation?.netSalary)}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Net Salary</p>
+                    <p className="text-2xl font-bold text-blue-700">{formatCurrency(payrollDetails.netCalculation?.netSalary)}</p>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </div>

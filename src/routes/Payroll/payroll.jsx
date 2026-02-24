@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import PayrollGen from "./PayrollGen";
 import SalarySheets from "./SalarySheets";
 import Payslip from "./Payslip";
+import BankTransferPdf from "./BankTransferPdf";
 
 function Payroll() {
   const [activeTab, setActiveTab] = useState("generate");
@@ -11,6 +12,7 @@ function Payroll() {
     { id: "generate", label: "Generate Payroll", icon: "⚡" },
     { id: "sheets", label: "Salary Sheets", icon: "📊" },
     { id: "payslip", label: "Payslip", icon: "🧾" },
+    { id: "bankTransfer", label: "Generate Bank Transfer PDF", icon: "🏦" },
   ];
 
   return (
@@ -49,6 +51,7 @@ function Payroll() {
         {activeTab === "generate" && <PayrollGen />}
         {activeTab === "sheets" && <SalarySheets />}
         {activeTab === "payslip" && <Payslip />}
+        {activeTab === "bankTransfer" && <BankTransferPdf />}
       </div>
 
       <style>{`

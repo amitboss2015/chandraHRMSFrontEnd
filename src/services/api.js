@@ -356,7 +356,25 @@ export const payrollApi = {
   
   getSkippedEmployees: (year, month, orgId = DEFAULT_ORG_ID) => 
     fetchApi(`${API_BASE}/payroll/skipped?orgId=${orgId}&year=${year}&month=${month}`),
-  
+
+  getBankTransferList: (year, month, orgId = DEFAULT_ORG_ID) =>
+    fetchApi(`${API_BASE}/payroll/bank-transfer-list?orgId=${orgId}&year=${year}&month=${month}`),
+
+  generateBankTransferPdf: async (payrollIds) => {
+    const tenantId = getCurrentTenantId();
+    const accessToken = getAccessToken();
+    const headers = { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const response = await fetch(`${API_BASE}/payroll/bank-transfer-pdf`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payrollIds),
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error(await response.text() || response.statusText);
+    return response.blob();
+  },
+
   // Update
   update: (id, data) => 
     fetchApi(`${API_BASE}/payroll/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
