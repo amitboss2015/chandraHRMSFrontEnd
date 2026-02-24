@@ -200,6 +200,14 @@ export default function EmployeeList() {
   // Salary update device state
   const [selectedSalaryDeviceId, setSelectedSalaryDeviceId] = useState('');
 
+  // Bank details update modal state
+  const [showBankDetailsModal, setShowBankDetailsModal] = useState(false);
+  const [bankDetailsFile, setBankDetailsFile] = useState(null);
+  const [isDraggingBank, setIsDraggingBank] = useState(false);
+  const [updatingBankDetails, setUpdatingBankDetails] = useState(false);
+  const [bankDetailsResult, setBankDetailsResult] = useState(null);
+  const bankDetailsFileInputRef = useRef(null);
+
   const authHeaders = useMemo(() => {
     const t = getToken();
     const tenantId = getOrgId() || 'SASA001';
@@ -704,6 +712,86 @@ export default function EmployeeList() {
     resetSalaryUpdateModal();
   };
 
+  // ==================== BANK DETAILS UPDATE MODAL ====================
+  const downloadBankDetailsTemplate = async () => {
+    try {
+      const url = `${API_BASE}/employees/bank-details/template/download`;
+      const res = await fetch(url, { headers: authHeaders });
+      if (!res.ok) throw new Error("Failed to download template");
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = "bank_details_update_template.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to download template: " + error.message);
+    }
+  };
+
+  const handleBankDetailsFileSelect = (selectedFile) => {
+    if (!selectedFile) return;
+    const validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
+    if (!validTypes.includes(selectedFile.type) && !selectedFile.name.endsWith('.xlsx') && !selectedFile.name.endsWith('.xls')) {
+      alert("Please select a valid Excel file (.xlsx or .xls)");
+      return;
+    }
+    setBankDetailsFile(selectedFile);
+    setBankDetailsResult(null);
+  };
+
+  const handleBankDetailsDrag = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+  const handleBankDetailsDragIn = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingBank(true); }, []);
+  const handleBankDetailsDragOut = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingBank(false); }, []);
+  const handleBankDetailsDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingBank(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) handleBankDetailsFileSelect(droppedFile);
+  }, []);
+
+  const handleBankDetailsSubmit = async () => {
+    if (!bankDetailsFile) return alert("Please select a file first");
+    setUpdatingBankDetails(true);
+    setBankDetailsResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", bankDetailsFile);
+      const res = await fetchWithRefresh(`${API_BASE}/employees/bank-details/import`, {
+        method: "POST",
+        headers: { "X-Tenant-Id": getOrgId() || 'SASA001', "Authorization": `Bearer ${getToken()}` },
+        body: formData
+      });
+      const data = await res.json();
+      setBankDetailsResult(data);
+      if (data.success || (data.updatedCount > 0)) {
+        await fetchEmployees();
+        setTimeout(() => closeBankDetailsModal(), 3000);
+      }
+    } catch (error) {
+      console.error(error);
+      setBankDetailsResult({ success: false, message: "Update failed: " + error.message, errors: [] });
+    } finally {
+      setUpdatingBankDetails(false);
+    }
+  };
+
+  const resetBankDetailsModal = () => {
+    setBankDetailsFile(null);
+    setBankDetailsResult(null);
+    if (bankDetailsFileInputRef.current) bankDetailsFileInputRef.current.value = "";
+  };
+
+  const closeBankDetailsModal = () => {
+    setShowBankDetailsModal(false);
+    resetBankDetailsModal();
+  };
+
   const handleDelete = async (emp_code) => {
     if (!emp_code) return;
     const confirmMessage = `Are you sure you want to delete this employee?\n\nThis will permanently delete:\n- All attendance records\n- All payroll records\n- All leave records\n- All loan records\n- All shift assignments\n- All biometric mappings\n\nThis action cannot be undone!`;
@@ -843,6 +931,12 @@ export default function EmployeeList() {
               className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:shadow-md transition-all text-sm font-medium flex items-center gap-2"
             >
               💰 Update Salary
+            </button>
+            <button
+              onClick={() => setShowBankDetailsModal(true)}
+              className="px-4 py-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg hover:shadow-md transition-all text-sm font-medium flex items-center gap-2"
+            >
+              🏦 Update Bank Details
             </button>
             {selectedEmployees.size > 0 && (
               <button
@@ -1741,6 +1835,124 @@ export default function EmployeeList() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== BANK DETAILS UPDATE MODAL ==================== */}
+      {showBankDetailsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-teal-500 to-teal-600 rounded-t-2xl">
+              <div>
+                <h2 className="text-xl font-bold text-white">Update Bank Details</h2>
+                <p className="text-teal-100 text-sm">Download template (EMP_ID, EMP_CODE, EMP NAME, ACCOUNT NO, IFSC NO, BRANCH), fill and upload to bulk update</p>
+              </div>
+              <button onClick={closeBankDetailsModal} className="text-white/80 hover:text-white text-2xl font-light w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors">×</button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="bg-teal-50 rounded-xl p-4 border border-teal-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-teal-500 text-white flex items-center justify-center text-sm font-bold">1</div>
+                  <h3 className="font-semibold text-teal-900">Download Template</h3>
+                </div>
+                <p className="text-sm text-teal-700 mb-3">Template includes all active employees with EMP_ID, EMP_CODE, EMP NAME and current ACCOUNT NO, IFSC NO, BRANCH. Edit the bank columns and upload.</p>
+                <button
+                  onClick={downloadBankDetailsTemplate}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors text-sm font-medium"
+                >
+                  📥 Download Bank Details Template
+                </button>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">2</div>
+                  <h3 className="font-semibold text-emerald-900">Upload Filled Template</h3>
+                </div>
+                <div
+                  className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
+                    isDraggingBank ? "border-emerald-500 bg-emerald-100" :
+                    bankDetailsFile ? "border-emerald-400 bg-white" : "border-emerald-300 hover:border-emerald-400 bg-white"
+                  }`}
+                  onDragEnter={handleBankDetailsDragIn}
+                  onDragLeave={handleBankDetailsDragOut}
+                  onDragOver={handleBankDetailsDrag}
+                  onDrop={handleBankDetailsDrop}
+                  onClick={() => bankDetailsFileInputRef.current?.click()}
+                >
+                  <input
+                    ref={bankDetailsFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(e) => handleBankDetailsFileSelect(e.target.files?.[0])}
+                    className="hidden"
+                  />
+                  {bankDetailsFile ? (
+                    <div className="space-y-2">
+                      <div className="text-4xl">📄</div>
+                      <p className="font-medium text-slate-800">{bankDetailsFile.name}</p>
+                      <p className="text-xs text-slate-500">{(bankDetailsFile.size / 1024).toFixed(1)} KB</p>
+                      <button onClick={(e) => { e.stopPropagation(); resetBankDetailsModal(); }} className="text-xs text-red-600 hover:text-red-700 underline">Remove file</button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-4xl">📁</div>
+                      <p className="font-medium text-slate-700">Drag & drop or click to select</p>
+                      <p className="text-xs text-slate-500">Supports .xlsx and .xls</p>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    onClick={handleBankDetailsSubmit}
+                    disabled={!bankDetailsFile || updatingBankDetails}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
+                      !bankDetailsFile || updatingBankDetails ? "bg-slate-200 text-slate-500 cursor-not-allowed" : "bg-emerald-500 text-white hover:bg-emerald-600"
+                    }`}
+                  >
+                    {updatingBankDetails ? (<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Updating...</>) : <>🏦 Update Bank Details</>}
+                  </button>
+                </div>
+              </div>
+              {bankDetailsResult && (
+                <div className={`rounded-xl p-4 border ${
+                  bankDetailsResult.success ? "bg-green-50 border-green-200" :
+                  (bankDetailsResult.updatedCount > 0 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200")
+                }`}>
+                  <h3 className="font-semibold mb-3 text-green-900">Update Results</h3>
+                  {bankDetailsResult.updatedCount > 0 ? (
+                    <p className="text-sm mb-4 text-green-700 font-medium">✅ Successfully updated {bankDetailsResult.updatedCount} employee(s)!</p>
+                  ) : (
+                    <p className="text-sm mb-4 text-red-700">{bankDetailsResult.message || "Update failed"}</p>
+                  )}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-green-200">
+                      <div className="text-2xl font-bold text-green-600">{bankDetailsResult.updatedCount || 0}</div>
+                      <div className="text-xs text-green-600 font-medium">✓ Updated</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-amber-200">
+                      <div className="text-2xl font-bold text-amber-600">{bankDetailsResult.skippedCount || 0}</div>
+                      <div className="text-xs text-amber-600 font-medium">⏭ Skipped</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 text-center border-2 border-red-200">
+                      <div className="text-2xl font-bold text-red-600">{(bankDetailsResult.errors?.length || 0)}</div>
+                      <div className="text-xs text-red-600 font-medium">✗ Errors</div>
+                    </div>
+                  </div>
+                  {bankDetailsResult.errors?.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-bold text-red-800 mb-2">Errors:</p>
+                      <ul className="text-xs text-red-700 space-y-1">
+                        {bankDetailsResult.errors.map((error, idx) => (<li key={idx}>• {error}</li>))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-slate-50 rounded-b-2xl flex justify-end">
+              <button onClick={closeBankDetailsModal} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium text-sm">Close</button>
             </div>
           </div>
         </div>

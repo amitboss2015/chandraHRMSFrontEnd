@@ -896,9 +896,19 @@ function PayrollGen() {
                   </div>
                   <div className="bg-indigo-50 p-3 rounded-lg">
                     <p className="text-xs text-indigo-600">OT Hours</p>
-                    <p className="text-lg font-bold text-indigo-700">{payrollDetails.attendance?.overtimeHours || '0'} hrs</p>
+                    <p className="text-lg font-bold text-indigo-700">{payrollDetails.attendance?.overtimeHours ?? '0'} hrs</p>
                   </div>
-                  <div className="bg-orange-100 p-3 rounded-lg">
+                  <div className="bg-indigo-50 p-3 rounded-lg col-span-2 sm:col-span-1">
+                    <p className="text-xs text-indigo-600">OT Day Charges</p>
+                    <p className="text-lg font-bold text-indigo-700">{formatCurrency(payrollDetails.earnings?.overtimeDayAmount)}</p>
+                    <p className="text-[10px] text-indigo-500/80 mt-0.5" title="Per day rate = Final Pay ÷ Working Days">(Final Pay ÷ Working Days) × OT Days × multiplier</p>
+                  </div>
+                  <div className="bg-indigo-50 p-3 rounded-lg col-span-2 sm:col-span-1">
+                    <p className="text-xs text-indigo-600">OT Hour Charges</p>
+                    <p className="text-lg font-bold text-indigo-700">{formatCurrency(payrollDetails.earnings?.overtimeHourAmount)}</p>
+                    <p className="text-[10px] text-indigo-500/80 mt-0.5" title="Per hour = Final Pay ÷ Working Days ÷ 8">(Final Pay ÷ Working Days ÷ 8) × OT Hrs × multiplier</p>
+                  </div>
+                  <div className="bg-orange-100 p-3 rounded-lg col-span-2 sm:col-span-1">
                     <p className="text-xs text-orange-600">Late Hours</p>
                     <p className="text-lg font-bold text-orange-700">{payrollDetails.attendance?.totalLateHours || 0} hrs</p>
                   </div>
