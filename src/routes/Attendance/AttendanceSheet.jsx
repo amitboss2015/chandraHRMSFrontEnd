@@ -525,6 +525,10 @@ function AttendanceSheet() {
       
       if (data.duplicate) {
         setImportError(`Duplicate upload detected: ${data.message}`);
+      } else if ((data.success || 0) > 0) {
+        // Refresh monthly summary so user sees data when they open Monthly Report (bypass browser cache)
+        loadSummary(true);
+        setActiveTab('monthly');
       }
     } catch (e) {
       setImportError(e.message || "Import failed");
@@ -938,7 +942,7 @@ function AttendanceSheet() {
     }
   };
 
-  const loadSummary = async () => {
+  const loadSummary = async (forceRefresh = false) => {
     // Validate parameters before making API call
     if (!month || !year) {
       console.warn('⚠️ Cannot load summary: month or year is missing', { month, year });
@@ -950,7 +954,8 @@ function AttendanceSheet() {
     setSummaryLoading(true);
     setSummaryError("");
     try {
-      const data = await fetchJson(`/attendance/summary?month=${month}&year=${year}`);
+      const opts = forceRefresh ? { cache: 'no-store' } : {};
+      const data = await fetchJson(`/attendance/summary?month=${month}&year=${year}`, opts);
       let filteredData = Array.isArray(data) ? data : [];
       
       // Filter by device if selected

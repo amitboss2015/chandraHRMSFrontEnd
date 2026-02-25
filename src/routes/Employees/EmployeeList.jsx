@@ -208,6 +208,10 @@ export default function EmployeeList() {
   const [bankDetailsResult, setBankDetailsResult] = useState(null);
   const bankDetailsFileInputRef = useRef(null);
 
+  // Delete in progress – prevent multiple API calls (double-click / re-render)
+  const [deletingEmpCode, setDeletingEmpCode] = useState(null);
+  const [deletingBulk, setDeletingBulk] = useState(false);
+
   const authHeaders = useMemo(() => {
     const t = getToken();
     const tenantId = getOrgId() || 'SASA001';
@@ -375,39 +379,40 @@ export default function EmployeeList() {
     }
   };
   
-  // Handle bulk delete
+  // Handle bulk delete by employee ID (single API call, single transaction)
   const handleBulkDelete = async () => {
+    if (deletingBulk) return;
     if (selectedEmployees.size === 0) {
       alert("Please select at least one employee to delete");
       return;
     }
-    
     const confirmMessage = `Are you sure you want to delete ${selectedEmployees.size} employee(s)?\n\nThis will permanently delete:\n- All attendance records\n- All payroll records\n- All leave records\n- All loan records\n- All shift assignments\n- All biometric mappings\n\nThis action cannot be undone!`;
-    
-    if (!window.confirm(confirmMessage)) {
+    if (!window.confirm(confirmMessage)) return;
+    const selectedIds = filteredEmployees.filter(emp => selectedEmployees.has(emp.emp_code)).map(emp => emp.id).filter(id => id != null);
+    if (selectedIds.length === 0) {
+      alert("Could not resolve selected employees");
       return;
     }
-    
+    setDeletingBulk(true);
     try {
-      const empCodes = Array.from(selectedEmployees);
       const res = await fetchWithRefresh(`${API_BASE}/employees/bulk`, {
         method: "DELETE",
         headers: authHeaders,
-        body: JSON.stringify(empCodes)
+        body: JSON.stringify(selectedIds)
       });
-      
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Delete failed (${res.status})`);
       }
-      
       const result = await res.json();
-      alert(result.message || `Successfully deleted ${empCodes.length} employee(s)`);
+      alert(result.message || `Successfully deleted ${selectedIds.length} employee(s)`);
       setSelectedEmployees(new Set());
       await fetchEmployees();
     } catch (err) {
       console.error(err);
       alert("Error deleting employees: " + err.message);
+    } finally {
+      setDeletingBulk(false);
     }
   };
 
@@ -794,8 +799,10 @@ export default function EmployeeList() {
 
   const handleDelete = async (emp_code) => {
     if (!emp_code) return;
+    if (deletingEmpCode === emp_code) return; // prevent double-click / multiple calls
     const confirmMessage = `Are you sure you want to delete this employee?\n\nThis will permanently delete:\n- All attendance records\n- All payroll records\n- All leave records\n- All loan records\n- All shift assignments\n- All biometric mappings\n\nThis action cannot be undone!`;
     if (!window.confirm(confirmMessage)) return;
+    setDeletingEmpCode(emp_code);
     try {
       const url = `${API_BASE}/employees/${encodeURIComponent(emp_code)}`;
       const res = await fetchWithRefresh(url, { method: "DELETE", headers: authHeaders });
@@ -809,6 +816,8 @@ export default function EmployeeList() {
     } catch (e) {
       console.error(e);
       alert("Failed to delete employee: " + e.message);
+    } finally {
+      setDeletingEmpCode(null);
     }
   };
 
@@ -941,9 +950,10 @@ export default function EmployeeList() {
             {selectedEmployees.size > 0 && (
               <button
                 onClick={handleBulkDelete}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium flex items-center gap-2"
+                disabled={deletingBulk}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                🗑️ Delete Selected ({selectedEmployees.size})
+                {deletingBulk ? "⏳ Deleting…" : `🗑️ Delete Selected (${selectedEmployees.size})`}
               </button>
             )}
             <button
@@ -1046,9 +1056,10 @@ export default function EmployeeList() {
                   </button>
                   <button
                     onClick={() => handleDelete(emp.emp_code)}
-                    className="px-3 py-1.5 bg-red-100 text-red-600 rounded text-sm hover:bg-red-200 transition-colors"
+                    disabled={deletingEmpCode === emp.emp_code}
+                    className="px-3 py-1.5 bg-red-100 text-red-600 rounded text-sm hover:bg-red-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    🗑️
+                    {deletingEmpCode === emp.emp_code ? "⏳" : "🗑️"}
                   </button>
                 </div>
               </div>
@@ -1198,10 +1209,11 @@ export default function EmployeeList() {
                           </button>
                           <button
                             onClick={() => handleDelete(emp.emp_code)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete"
+                            disabled={deletingEmpCode === emp.emp_code}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            title={deletingEmpCode === emp.emp_code ? "Deleting…" : "Delete"}
                           >
-                            🗑️
+                            {deletingEmpCode === emp.emp_code ? "⏳" : "🗑️"}
                           </button>
                         </div>
                       </td>
@@ -1449,7 +1461,7 @@ export default function EmployeeList() {
                   <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 mb-3">
                     <strong>Summary:</strong> Out of {(importResult.successCount || 0) + (importResult.skippedCount || 0) + (importResult.errorCount || 0)} data rows in your file, 
                     {importResult.successCount > 0 && <span className="text-green-600"> {importResult.successCount} new employees were added</span>}
-                    {importResult.skippedCount > 0 && <span className="text-amber-600">, {importResult.skippedCount} were skipped (already exist)</span>}
+                    {importResult.skippedCount > 0 && <span className="text-amber-600">, {importResult.skippedCount} skipped (employee already exists in system – see list below)</span>}
                     {importResult.errorCount > 0 && <span className="text-red-600">, {importResult.errorCount} had errors</span>}.
                   </div>
 
@@ -1524,22 +1536,24 @@ export default function EmployeeList() {
                     </div>
                   )}
                   
-                  {/* Skipped entries (already exist) */}
+                  {/* Skipped entries (employee already exists in the system) */}
                   {importResult.skipped && importResult.skipped.length > 0 && (
                     <div className="mb-3">
-                      <details className="text-sm">
-                        <summary className="cursor-pointer text-amber-600 font-medium hover:text-amber-700">
-                          ⏭ {importResult.skipped.length} Skipped (already exist) - पहले से मौजूद
+                      <details className="text-sm" open={importResult.skipped.length > 0}>
+                        <summary className="cursor-pointer text-amber-700 font-semibold hover:text-amber-800">
+                          ⏭ {importResult.skipped.length} Skipped – Employee already exists in the system (Emp Code shown below)
                         </summary>
-                        <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2 max-h-32 overflow-y-auto">
-                          {importResult.skipped.slice(0, 20).map((skip, idx) => (
-                            <div key={idx} className="text-xs text-amber-700 py-0.5">
-                              Row {skip.rowNumber}: <span className="font-mono">{skip.empCode}</span> - {skip.reason}
+                        <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                          {importResult.skipped.slice(0, 50).map((skip, idx) => (
+                            <div key={idx} className="text-sm text-amber-800 py-1 flex flex-wrap items-baseline gap-x-2">
+                              <span className="font-mono font-semibold text-amber-900">Emp Code: {skip.empCode}</span>
+                              <span className="text-amber-600">(Row {skip.rowNumber})</span>
+                              <span className="text-amber-700">– {skip.reason}</span>
                             </div>
                           ))}
-                          {importResult.skipped.length > 20 && (
+                          {importResult.skipped.length > 50 && (
                             <div className="text-xs text-amber-600 mt-1">
-                              ... and {importResult.skipped.length - 20} more
+                              ... and {importResult.skipped.length - 50} more
                             </div>
                           )}
                         </div>

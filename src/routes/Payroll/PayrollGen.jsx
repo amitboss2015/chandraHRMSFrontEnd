@@ -1,6 +1,7 @@
 // PayrollGen.jsx - Enhanced Payroll Generation with Attendance Check, Loan/Advance Details
 import React, { useState, useEffect } from "react";
-import { payrollApi, loanApi, getTenantId, getToken } from "../../services/api";
+import { payrollApi, loanApi, attendanceApi, getTenantId, getToken } from "../../services/api";
+import { Link } from "react-router-dom";
 import { usePeriodSelection } from "../../utils/monthYearState";
 import { API_BASE } from "../../utils/apiConfig";
 
@@ -18,6 +19,11 @@ function PayrollGen() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [payrollDetails, setPayrollDetails] = useState(null);
   const [attendanceCheck, setAttendanceCheck] = useState(null);
+  const [missingPunchInfo, setMissingPunchInfo] = useState(null);
+  const [pendingEmployeesFromApi, setPendingEmployeesFromApi] = useState([]); // has attendance, no payroll (from API)
+  const [lastGenerateResult, setLastGenerateResult] = useState(null); // { skippedMissingPunch, skippedNoAttendance }
+  const [selectedPendingEmpCodes, setSelectedPendingEmpCodes] = useState([]); // empCodes selected for "generate for selected"
+  const [generatingBatch, setGeneratingBatch] = useState(false);
   const [skippedEmployees, setSkippedEmployees] = useState(null);
   const [showSkippedModal, setShowSkippedModal] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState({
@@ -74,6 +80,22 @@ function PayrollGen() {
           console.error('Failed to check attendance:', e);
         }
       }
+      // Check unfixed missing punches for this month
+      try {
+        const dashboard = await attendanceApi.getMissingPunchDashboard(month, year);
+        setMissingPunchInfo(dashboard);
+      } catch (e) {
+        console.error('Failed to load missing punch status:', e);
+        setMissingPunchInfo(null);
+      }
+      // Employees who have attendance but no payroll (so we can list them to generate)
+      try {
+        const pending = await payrollApi.getPendingEmployees(year, month);
+        setPendingEmployeesFromApi(Array.isArray(pending) ? pending : []);
+      } catch (e) {
+        console.error('Failed to load pending employees:', e);
+        setPendingEmployeesFromApi([]);
+      }
     } catch (error) {
       console.error('Failed to load payrolls:', error);
       setMessage({ type: 'error', text: 'Failed to load payroll data' });
@@ -82,18 +104,44 @@ function PayrollGen() {
     }
   };
 
+  const storageKey = () => `payrollPendingSkip_${getTenantId()}_${year}_${month}`;
+
   useEffect(() => {
+    setLastGenerateResult(null);
+    setSelectedPendingEmpCodes([]);
+    try { sessionStorage.removeItem(storageKey()); } catch (_) {}
     loadPayrolls();
   }, [year, month]);
+
+  // After loadPayrolls, restore "skipped missing punch" list from storage so list survives page refresh
+  useEffect(() => {
+    if (!payrolls.length || lastGenerateResult !== null) return;
+    try {
+      const raw = sessionStorage.getItem(storageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) setLastGenerateResult({ skippedMissingPunch: parsed, skippedNoAttendance: [] });
+      }
+    } catch (_) {}
+  }, [payrolls.length, year, month]);
 
   const generatePayroll = async () => {
     try {
       setGenerating(true);
       setMessage(null);
-      await payrollApi.generate(year, month);
-      setMessage({ type: 'success', text: 'Payroll generated successfully!' });
+      setLastGenerateResult(null);
+      const data = await payrollApi.generate(year, month);
+      setMessage({ type: 'success', text: data.message || `Payroll generated for ${data.count ?? 0} employee(s).` });
+      const skip = { skippedMissingPunch: data.skippedMissingPunch || [], skippedNoAttendance: data.skippedNoAttendance || [] };
+      setLastGenerateResult(skip);
+      try { sessionStorage.setItem(`payrollPendingSkip_${getTenantId()}_${year}_${month}`, JSON.stringify(skip.skippedMissingPunch)); } catch (_) {}
       setAttendanceCheck(null);
       await loadPayrolls();
+      // Refresh missing-punch state so "pending" list is up to date
+      try {
+        const dashboard = await attendanceApi.getMissingPunchDashboard(month, year);
+        setMissingPunchInfo(dashboard);
+      } catch (_) {}
     } catch (error) {
       console.error('Failed to generate payroll:', error);
       if (error.isAttendanceError) {
@@ -103,7 +151,7 @@ function PayrollGen() {
         });
         setAttendanceCheck(error);
       } else {
-        setMessage({ type: 'error', text: 'Failed to generate payroll. Please try again.' });
+        setMessage({ type: 'error', text: error.message || 'Failed to generate payroll. Please try again.' });
       }
     } finally {
       setGenerating(false);
@@ -489,7 +537,7 @@ function PayrollGen() {
         <button
           onClick={generatePayroll}
           disabled={generating}
-          className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 font-medium"
+          className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
           {generating ? '⏳ Generating...' : '📊 Generate Payroll'}
         </button>
@@ -535,6 +583,254 @@ function PayrollGen() {
           🔄 Refresh
         </button>
       </div>
+
+      {/* All clear – green signal */}
+      {missingPunchInfo && (missingPunchInfo.totalIssues || 0) === 0 && (attendanceCheck?.available || payrolls.length > 0) && (
+        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-300 rounded-lg">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <h4 className="font-bold text-emerald-900">All attendance clear</h4>
+              <p className="text-emerald-800 mt-1">
+                You can generate payroll for all employees with attendance for this month.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending: missing punch – payroll generated only for clear employees */}
+      {missingPunchInfo && (missingPunchInfo.totalIssues || 0) > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-lg">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div className="flex-1">
+              <h4 className="font-bold text-amber-900">Partial payroll possible</h4>
+              <p className="text-amber-800 mt-1">
+                Payroll is generated only for employees with clear attendance. {missingPunchInfo.totalEmployeesWithIssues || 0} employee(s) have unfixed missing punch — fix to include them in payroll.
+              </p>
+              <p className="text-sm text-amber-700 mt-2">
+                {missingPunchInfo.totalIssues} unfixed day(s) this month.
+              </p>
+              <Link
+                to="/attendance/missing-punch"
+                className="inline-block mt-3 px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium text-sm"
+              >
+                Go to Missing Punch Fix →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* After generate: show who was skipped (missing punch) + green next step */}
+      {lastGenerateResult && (lastGenerateResult.skippedMissingPunch?.length || 0) > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="font-bold text-blue-900 mb-2">Payroll not generated (missing punch)</h4>
+          <p className="text-blue-800 text-sm mb-3">
+            The following employees were skipped. Fix their missing punches, then click <strong>Refresh</strong> and <strong>Generate Payroll</strong> again to add them.
+          </p>
+          <ul className="list-disc list-inside text-blue-800 text-sm space-y-1 mb-3">
+            {(lastGenerateResult.skippedMissingPunch || []).map((e, i) => (
+              <li key={i}><strong>{e.empCode}</strong> — {e.empName}</li>
+            ))}
+          </ul>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/attendance/missing-punch"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm"
+            >
+              Fix missing punch →
+            </Link>
+            <span className="text-blue-600 text-sm">After fixing, refresh this page and run Generate Payroll again.</span>
+          </div>
+        </div>
+      )}
+
+      {/* After fix: green signal – you can generate for pending */}
+      {missingPunchInfo && (missingPunchInfo.totalIssues || 0) === 0 && payrolls.length > 0 && lastGenerateResult?.skippedMissingPunch?.length > 0 && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-300 rounded-lg">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <h4 className="font-bold text-green-900">Ready for remaining employees</h4>
+              <p className="text-green-800 mt-1">
+                Missing punches are fixed. Click <strong>Generate Payroll</strong> again to generate payroll for the employees who were pending.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Skipped (no attendance) – highlight */}
+      {lastGenerateResult && (lastGenerateResult.skippedNoAttendance?.length || 0) > 0 && (
+        <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+          <h4 className="font-bold text-slate-800 mb-2">Payroll not generated (no attendance)</h4>
+          <p className="text-slate-600 text-sm mb-2">These employees had no attendance for this month:</p>
+          <ul className="list-disc list-inside text-slate-700 text-sm space-y-1">
+            {(lastGenerateResult.skippedNoAttendance || []).map((e, i) => (
+              <li key={i}><strong>{e.empCode}</strong> — {e.empName}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Employees whose payroll not processed – use API list (has attendance, no payroll) so fixed employees appear */}
+      {(() => {
+        const empCodesWithMissing = new Set((missingPunchInfo?.employees || []).map(e => e.empCode));
+        const fromApi = (pendingEmployeesFromApi || []).map(e => ({
+          empCode: e.empCode,
+          empName: e.empName || e.empCode,
+          ready: !empCodesWithMissing.has(e.empCode),
+        }));
+        const fromSkip = (lastGenerateResult?.skippedMissingPunch || []).map(e => ({ empCode: e.empCode, empName: e.empName, ready: !empCodesWithMissing.has(e.empCode) }));
+        const fromDash = (missingPunchInfo?.employees || []).map(e => ({ empCode: e.empCode, empName: e.empName, ready: false }));
+        const seen = new Set();
+        const pendingForPayroll = [];
+        (fromApi.length > 0 ? fromApi : [...fromSkip, ...fromDash]).forEach(e => {
+          if (!seen.has(e.empCode)) { seen.add(e.empCode); pendingForPayroll.push(e); }
+        });
+        if (pendingForPayroll.length === 0) return null;
+        const readyCount = pendingForPayroll.filter(e => e.ready).length;
+        const readyEmpCodes = pendingForPayroll.filter(e => e.ready).map(e => e.empCode);
+        const allReadySelected = readyCount > 0 && readyEmpCodes.every(c => selectedPendingEmpCodes.includes(c));
+        const someReadySelected = readyEmpCodes.some(c => selectedPendingEmpCodes.includes(c));
+        const toggleSelectAllReady = () => {
+          if (allReadySelected) setSelectedPendingEmpCodes(prev => prev.filter(c => !readyEmpCodes.includes(c)));
+          else setSelectedPendingEmpCodes(prev => [...new Set([...prev, ...readyEmpCodes])]);
+        };
+        return (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <h4 className="font-bold text-amber-900 mb-2">Employees whose payroll is not processed</h4>
+            <p className="text-amber-800 text-sm mb-2">
+              After fixing missing punches on the Missing Punch Fix page, click <strong>Refresh list</strong> below so they show as &quot;Ready — generate payroll&quot; with a checkbox. Use <strong>Select all</strong> to select all ready employees, then click <strong>Generate payroll for selected</strong> once to generate in one go.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const [dashboard, pending] = await Promise.all([
+                      attendanceApi.getMissingPunchDashboard(month, year),
+                      payrollApi.getPendingEmployees(year, month),
+                    ]);
+                    setMissingPunchInfo(dashboard);
+                    setPendingEmployeesFromApi(Array.isArray(pending) ? pending : []);
+                    setMessage({ type: 'success', text: 'List refreshed. Employees you fixed should now show as Ready.' });
+                    setTimeout(() => setMessage(null), 3000);
+                  } catch (e) {
+                    setMessage({ type: 'error', text: 'Failed to refresh list.' });
+                  }
+                }}
+                className="px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium text-sm"
+              >
+                🔄 Refresh list
+              </button>
+              {readyCount > 0 && (
+                <>
+                  <span className="text-green-700 text-sm font-medium">{readyCount} employee(s) ready</span>
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllReady}
+                    className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 rounded hover:bg-amber-100 font-medium text-sm"
+                  >
+                    {allReadySelected ? 'Deselect all' : 'Select all ready'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={generatingBatch || selectedPendingEmpCodes.length === 0}
+                    onClick={async () => {
+                      setGeneratingBatch(true);
+                      setMessage(null);
+                      try {
+                        const data = await payrollApi.generateBatch(year, month, selectedPendingEmpCodes);
+                        setMessage({ type: 'success', text: data.message || `Generated for ${data.count ?? 0} employee(s).` });
+                        setSelectedPendingEmpCodes([]);
+                        const updated = (lastGenerateResult?.skippedMissingPunch || []).filter(e => !selectedPendingEmpCodes.includes(e.empCode));
+                        setLastGenerateResult(prev => ({ ...prev, skippedMissingPunch: updated }));
+                        try { sessionStorage.setItem(storageKey(), JSON.stringify(updated)); } catch (_) {}
+                        await loadPayrolls();
+                        try { setMissingPunchInfo(await attendanceApi.getMissingPunchDashboard(month, year)); } catch (_) {}
+                      } catch (err) {
+                        setMessage({ type: 'error', text: err.message || 'Failed to generate payroll for selected.' });
+                      } finally {
+                        setGeneratingBatch(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 font-medium text-sm"
+                  >
+                    {generatingBatch ? '⏳ Generating...' : `📊 Generate payroll for selected (${selectedPendingEmpCodes.length})`}
+                  </button>
+                  {selectedPendingEmpCodes.length > 0 && (
+                    <button type="button" onClick={() => setSelectedPendingEmpCodes([])} className="text-slate-600 hover:text-slate-800 text-sm font-medium">
+                      Clear selection
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-amber-200">
+                    <th className="text-left py-2 pr-2 w-10">
+                      {readyCount > 0 ? (
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={allReadySelected}
+                            ref={el => el && (el.indeterminate = someReadySelected && !allReadySelected)}
+                            onChange={toggleSelectAllReady}
+                            className="rounded"
+                          />
+                          <span className="text-xs font-medium text-amber-900">Select all</span>
+                        </label>
+                      ) : (
+                        'Select'
+                      )}
+                    </th>
+                    <th className="text-left py-2">Emp Code</th>
+                    <th className="text-left py-2">Name</th>
+                    <th className="text-left py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingForPayroll.map((e) => (
+                    <tr key={e.empCode} className="border-b border-amber-100">
+                      <td className="py-2 pr-2">
+                        {e.ready ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedPendingEmpCodes.includes(e.empCode)}
+                            onChange={() => setSelectedPendingEmpCodes(prev => prev.includes(e.empCode) ? prev.filter(c => c !== e.empCode) : [...prev, e.empCode])}
+                            className="rounded"
+                          />
+                        ) : (
+                          <span className="text-amber-600 text-xs">Fix first</span>
+                        )}
+                      </td>
+                      <td className="font-medium">{e.empCode}</td>
+                      <td>{e.empName}</td>
+                      <td>
+                        {e.ready ? (
+                          <span className="text-green-700 font-medium">Ready — generate payroll</span>
+                        ) : (
+                          <span className="text-amber-700">Missing punch not fixed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {pendingForPayroll.some(e => !e.ready) && (
+              <p className="mt-2 text-amber-700 text-xs">
+                <Link to="/attendance/missing-punch" className="underline font-medium">Go to Missing Punch Fix</Link> to resolve, then return here and click <strong>Refresh list</strong> above.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Attendance Warning */}
       {attendanceCheck && !attendanceCheck.available && payrolls.length === 0 && (
@@ -983,9 +1279,35 @@ function PayrollGen() {
                 </div>
               </section>
 
-              {/* 5. Final Net */}
+              {/* 5. Total deduction breakdown – where total deduction went */}
+              {(payrollDetails.deductionBreakdown?.length > 0 || payrollDetails.netCalculation?.totalDeductions > 0) && (
+                <section className="bg-red-50/80 rounded-xl p-4 border border-red-100">
+                  <h4 className="text-sm font-bold text-red-800 uppercase tracking-wider mb-3">Total deduction breakdown</h4>
+                  <p className="text-xs text-slate-600 mb-3">Gross Salary − Total Deductions = Net Salary. Below is how total deduction is made up:</p>
+                  <ul className="space-y-2 mb-4">
+                    {(payrollDetails.deductionBreakdown || []).map((item, i) => (
+                      <li key={i} className="flex justify-between items-start gap-2 bg-white/80 p-2 rounded border border-red-100">
+                        <div>
+                          <span className="font-medium text-slate-800">{item.label}</span>
+                          {item.description && <p className="text-[10px] text-slate-500 mt-0.5">{item.description}</p>}
+                        </div>
+                        <span className="font-bold text-red-700 whitespace-nowrap">{formatCurrency(item.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-red-200 pt-2 flex justify-between items-center">
+                    <span className="font-medium text-slate-700">Total deductions</span>
+                    <span className="font-bold text-red-700">{formatCurrency(payrollDetails.netCalculation?.totalDeductions)}</span>
+                  </div>
+                </section>
+              )}
+
+              {/* 6. Final Net */}
               <section className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border-2 border-blue-200">
-                <h4 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-3">Final Calculation</h4>
+                <h4 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-3">Final calculation</h4>
+                <div className="space-y-2 text-sm text-slate-600 mb-3">
+                  <p>Gross Salary − Total Deductions = Net Salary</p>
+                </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <p className="text-xs text-slate-500 mb-0.5">Gross Salary</p>

@@ -232,6 +232,8 @@ export const employeeApi = {
   getByCode: (code) => fetchApi(`${API_BASE}/employees/code/${code}`),
   create: (data) => fetchApi(`${API_BASE}/employees`, { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => fetchApi(`${API_BASE}/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateBankDetails: (empCode, data) =>
+    fetchApi(`${API_BASE}/employees/${encodeURIComponent(empCode)}/bank-details`, { method: 'PATCH', body: JSON.stringify(data) }),
   search: (query) => fetchApi(`${API_BASE}/employees/search?q=${encodeURIComponent(query)}`),
 };
 
@@ -330,6 +332,23 @@ export const payrollApi = {
     }
     return data;
   },
+
+  /** Generate payroll for selected employees only (e.g. after fixing missing punch). Body: { year, month, empCodes } */
+  generateBatch: async (year, month, empCodes, orgId = DEFAULT_ORG_ID) => {
+    const tenantId = getCurrentTenantId();
+    const accessToken = getAccessToken();
+    const headers = { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const response = await fetch(`${API_BASE}/payroll/generate/batch?orgId=${orgId}`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({ year, month, empCodes }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw { ...data, isAttendanceError: data.available === false };
+    return data;
+  },
   
   generateForEmployee: (empId, year, month, orgId = DEFAULT_ORG_ID) => 
     fetchApi(`${API_BASE}/payroll/generate/${empId}?orgId=${orgId}&year=${year}&month=${month}`, { method: 'POST' }),
@@ -337,6 +356,10 @@ export const payrollApi = {
   // Retrieval
   getMonthly: (year, month, orgId = DEFAULT_ORG_ID) => 
     fetchApi(`${API_BASE}/payroll?orgId=${orgId}&year=${year}&month=${month}`),
+
+  /** Employees who have attendance this month but no payroll yet (for "generate for selected" list) */
+  getPendingEmployees: (year, month, orgId = DEFAULT_ORG_ID) =>
+    fetchApi(`${API_BASE}/payroll/pending-employees?orgId=${orgId}&year=${year}&month=${month}`),
   
   getById: (id) => fetchApi(`${API_BASE}/payroll/${id}`),
   
@@ -360,7 +383,7 @@ export const payrollApi = {
   getBankTransferList: (year, month, orgId = DEFAULT_ORG_ID) =>
     fetchApi(`${API_BASE}/payroll/bank-transfer-list?orgId=${orgId}&year=${year}&month=${month}`),
 
-  generateBankTransferPdf: async (payrollIds) => {
+  generateBankTransferPdf: async (payrollIds, amountType = 'NET') => {
     const tenantId = getCurrentTenantId();
     const accessToken = getAccessToken();
     const headers = { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId };
@@ -368,7 +391,7 @@ export const payrollApi = {
     const response = await fetch(`${API_BASE}/payroll/bank-transfer-pdf`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payrollIds),
+      body: JSON.stringify({ payrollIds, amountType: amountType.toUpperCase() }),
       credentials: 'include',
     });
     if (!response.ok) throw new Error(await response.text() || response.statusText);
@@ -535,6 +558,10 @@ export const attendanceApi = {
   
   deleteBatch: (batchId) => 
     fetchApi(`${API_BASE}/attendance/import/batches/${batchId}`, { method: 'DELETE' }),
+
+  /** Returns dashboard data; totalIssues > 0 means unfixed missing punches for the month */
+  getMissingPunchDashboard: (month, year) =>
+    fetchApi(`${API_BASE}/attendance/missing-punch-dashboard?month=${month}&year=${year}`),
 };
 
 // =========== TENANT MANAGEMENT ===========

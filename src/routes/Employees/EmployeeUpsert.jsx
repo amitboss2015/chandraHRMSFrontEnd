@@ -281,8 +281,8 @@ export default function EmployeeUpsert({ mode = "create" }) {
   const validationRules = {
     emp_code: {
       required: true,
-      pattern: /^[A-Za-z0-9_-]+$/,
-      message: "Only letters, numbers, underscores and hyphens allowed"
+      pattern: /^[A-Za-z0-9_\s-]+$/,
+      message: "Only letters, numbers, underscores, hyphens and spaces allowed (e.g. 05 L)"
     },
     first_name: {
       required: true,
@@ -506,7 +506,7 @@ export default function EmployeeUpsert({ mode = "create" }) {
               onToggle={() => setActiveSection(activeSection === "personal" ? "" : "personal")}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Employee Code" required error={touched.emp_code && errors.emp_code} hint="Letters, numbers, _, - only">
+                <Field label="Employee Code" required error={touched.emp_code && errors.emp_code} hint="Letters, numbers, _, -, spaces (e.g. 05 L)">
                   <input
                     className={`input-field ${touched.emp_code && errors.emp_code ? "border-red-400 bg-red-50" : ""}`}
                     value={form.emp_code}
