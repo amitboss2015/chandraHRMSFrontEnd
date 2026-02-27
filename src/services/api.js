@@ -234,6 +234,9 @@ export const employeeApi = {
   update: (id, data) => fetchApi(`${API_BASE}/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateBankDetails: (empCode, data) =>
     fetchApi(`${API_BASE}/employees/${encodeURIComponent(empCode)}/bank-details`, { method: 'PATCH', body: JSON.stringify(data) }),
+  /** Bulk update OT allowed (for attendance admin). Body: { empCodes: string[], otAllowed: boolean } */
+  bulkUpdateOtAllowed: (empCodes, otAllowed) =>
+    fetchApi(`${API_BASE}/employees/ot-allowed`, { method: 'PATCH', body: JSON.stringify({ empCodes, otAllowed }) }),
   search: (query) => fetchApi(`${API_BASE}/employees/search?q=${encodeURIComponent(query)}`),
 };
 
@@ -306,7 +309,7 @@ export const payrollApi = {
     fetchApi(`${API_BASE}/payroll/check-attendance?orgId=${orgId}&year=${year}&month=${month}`),
   
   // Generation
-  generate: async (year, month, orgId = DEFAULT_ORG_ID) => {
+  generate: async (year, month, orgId = DEFAULT_ORG_ID, deviceCode = null) => {
     const tenantId = getCurrentTenantId();
     const accessToken = getAccessToken();
     
@@ -320,7 +323,8 @@ export const payrollApi = {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
     
-    const response = await fetch(`${API_BASE}/payroll/generate?orgId=${orgId}&year=${year}&month=${month}`, {
+    const deviceParam = deviceCode ? `&deviceCode=${encodeURIComponent(deviceCode)}` : '';
+    const response = await fetch(`${API_BASE}/payroll/generate?orgId=${orgId}&year=${year}&month=${month}${deviceParam}`, {
       method: 'POST',
       headers,
       credentials: 'include',
@@ -333,17 +337,18 @@ export const payrollApi = {
     return data;
   },
 
-  /** Generate payroll for selected employees only (e.g. after fixing missing punch). Body: { year, month, empCodes } */
+  /** Generate payroll for selected employees only (e.g. after fixing missing punch). Body: { year, month, empCodes } — empCodes as strings. */
   generateBatch: async (year, month, empCodes, orgId = DEFAULT_ORG_ID) => {
     const tenantId = getCurrentTenantId();
     const accessToken = getAccessToken();
     const headers = { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const codes = Array.isArray(empCodes) ? empCodes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
     const response = await fetch(`${API_BASE}/payroll/generate/batch?orgId=${orgId}`, {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ year, month, empCodes }),
+      body: JSON.stringify({ year, month, empCodes: codes }),
     });
     const data = await response.json();
     if (!response.ok) throw { ...data, isAttendanceError: data.available === false };
@@ -354,8 +359,8 @@ export const payrollApi = {
     fetchApi(`${API_BASE}/payroll/generate/${empId}?orgId=${orgId}&year=${year}&month=${month}`, { method: 'POST' }),
   
   // Retrieval
-  getMonthly: (year, month, orgId = DEFAULT_ORG_ID) => 
-    fetchApi(`${API_BASE}/payroll?orgId=${orgId}&year=${year}&month=${month}`),
+  getMonthly: (year, month, orgId = DEFAULT_ORG_ID, deviceCode = null) =>
+    fetchApi(`${API_BASE}/payroll?orgId=${orgId}&year=${year}&month=${month}${deviceCode ? `&deviceCode=${encodeURIComponent(deviceCode)}` : ''}`),
 
   /** Employees who have attendance this month but no payroll yet (for "generate for selected" list) */
   getPendingEmployees: (year, month, orgId = DEFAULT_ORG_ID) =>
@@ -380,8 +385,8 @@ export const payrollApi = {
   getSkippedEmployees: (year, month, orgId = DEFAULT_ORG_ID) => 
     fetchApi(`${API_BASE}/payroll/skipped?orgId=${orgId}&year=${year}&month=${month}`),
 
-  getBankTransferList: (year, month, orgId = DEFAULT_ORG_ID) =>
-    fetchApi(`${API_BASE}/payroll/bank-transfer-list?orgId=${orgId}&year=${year}&month=${month}`),
+  getBankTransferList: (year, month, orgId = DEFAULT_ORG_ID, deviceCode = null) =>
+    fetchApi(`${API_BASE}/payroll/bank-transfer-list?orgId=${orgId}&year=${year}&month=${month}${deviceCode ? `&deviceCode=${encodeURIComponent(deviceCode)}` : ''}`),
 
   generateBankTransferPdf: async (payrollIds, amountType = 'NET') => {
     const tenantId = getCurrentTenantId();
@@ -526,6 +531,13 @@ export const reportApi = {
     fetchApi(`${API_BASE}/reports/loans/deductions?orgId=${orgId}&year=${year}&month=${month}`),
 };
 
+// =========== BIOMETRIC DEVICES ===========
+export const devicesApi = {
+  /** List all biometric devices for current tenant (for payroll device filter, etc.) */
+  getList: (activeOnly = false) =>
+    fetchApi(`${API_BASE}/devices?activeOnly=${activeOnly}`),
+};
+
 // =========== SHIFTS ===========
 export const shiftApi = {
   getAll: () => fetchApi(`${API_BASE}/shifts`),
@@ -559,9 +571,9 @@ export const attendanceApi = {
   deleteBatch: (batchId) => 
     fetchApi(`${API_BASE}/attendance/import/batches/${batchId}`, { method: 'DELETE' }),
 
-  /** Returns dashboard data; totalIssues > 0 means unfixed missing punches for the month */
-  getMissingPunchDashboard: (month, year) =>
-    fetchApi(`${API_BASE}/attendance/missing-punch-dashboard?month=${month}&year=${year}`),
+  /** Returns dashboard data; totalIssues > 0 means unfixed missing punches for the month. Use cacheBust=true to force fresh data after fix. */
+  getMissingPunchDashboard: (month, year, cacheBust = false) =>
+    fetchApi(`${API_BASE}/attendance/missing-punch-dashboard?month=${month}&year=${year}${cacheBust ? `&_t=${Date.now()}` : ''}`),
 };
 
 // =========== TENANT MANAGEMENT ===========
@@ -592,6 +604,7 @@ export default {
   holiday: holidayApi,
   report: reportApi,
   shift: shiftApi,
+  devices: devicesApi,
   attendance: attendanceApi,
   tenant: tenantApi,
   // Utilities

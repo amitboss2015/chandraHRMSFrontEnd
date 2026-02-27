@@ -1,6 +1,6 @@
 // PayrollGen.jsx - Enhanced Payroll Generation with Attendance Check, Loan/Advance Details
-import React, { useState, useEffect } from "react";
-import { payrollApi, loanApi, attendanceApi, getTenantId, getToken } from "../../services/api";
+import React, { useState, useEffect, useRef } from "react";
+import { payrollApi, loanApi, attendanceApi, devicesApi, getTenantId, getToken } from "../../services/api";
 import { Link } from "react-router-dom";
 import { usePeriodSelection } from "../../utils/monthYearState";
 import { API_BASE } from "../../utils/apiConfig";
@@ -44,6 +44,10 @@ function PayrollGen() {
   const [isGeneratingPayslip, setIsGeneratingPayslip] = useState(false);
   const [payslipPdfUrl, setPayslipPdfUrl] = useState(null);
   const [showPayslipViewer, setShowPayslipViewer] = useState(false);
+  const [selectedDeviceCode, setSelectedDeviceCode] = useState("__none__"); // __none__ = no selection yet (defer data fetch)
+  const [bankTransferData, setBankTransferData] = useState(null);
+  const [allDevices, setAllDevices] = useState([]);
+  const payrollCacheByDevice = useRef({}); // { deviceKey: { payrolls, bankTransferData, summary, ... } } - avoids re-fetch when switching devices
   const [newDue, setNewDue] = useState({
     amount: '',
     description: '',
@@ -52,52 +56,92 @@ function PayrollGen() {
   });
   // Edit modal removed - loans managed in loan management screen
 
-  const loadPayrolls = async () => {
+  /** Initial load: only devices + missing punch. No payroll data. Always fetch fresh missing punch so fixes reflect instantly when visiting. */
+  const loadInitial = async () => {
     try {
       setLoading(true);
-      const data = await payrollApi.getMonthly(year, month);
-      setPayrolls(data);
-      
-      if (data.length > 0) {
-        const summaryData = await payrollApi.getSummary(year, month);
+      const [devList, dashboard] = await Promise.all([
+        devicesApi.getList(true),
+        attendanceApi.getMissingPunchDashboard(month, year, true).catch(() => null),
+      ]);
+      setAllDevices(Array.isArray(devList) ? devList : []);
+      setMissingPunchInfo(dashboard);
+    } catch (e) {
+      console.error('Failed to load initial data:', e);
+      setMessage({ type: 'error', text: 'Failed to load devices' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cacheKeyForDevice = (dev) => `${getTenantId()}_${year}_${month}_${dev === '' ? '__all' : dev}`;
+
+  /** Load payroll data for selected device. Uses frontend cache per device — no API call when switching back to a previously selected device. */
+  const loadPayrollData = async (bypassCache = false) => {
+    if (selectedDeviceCode === '__none__') return;
+    const deviceCode = selectedDeviceCode === '' ? null : selectedDeviceCode;
+    const cacheKey = cacheKeyForDevice(selectedDeviceCode);
+    if (!bypassCache && payrollCacheByDevice.current[cacheKey]) {
+      const cached = payrollCacheByDevice.current[cacheKey];
+      setPayrolls(cached.payrolls || []);
+      setBankTransferData(cached.bankTransferData ?? null);
+      setSummary(cached.summary ?? null);
+      setSkippedEmployees(cached.skippedEmployees ?? null);
+      setAttendanceCheck(cached.attendanceCheck ?? null);
+      setPendingEmployeesFromApi(cached.pendingEmployeesFromApi || []);
+      attendanceApi.getMissingPunchDashboard(month, year, true).then(d => d && setMissingPunchInfo(d)).catch(() => {});
+      return;
+    }
+    try {
+      setLoading(true);
+      const [data, btl, dashboard] = await Promise.all([
+        payrollApi.getMonthly(year, month, undefined, deviceCode),
+        payrollApi.getBankTransferList(year, month, undefined, deviceCode).catch(() => null),
+        attendanceApi.getMissingPunchDashboard(month, year, true).catch(() => null),
+      ]);
+      if (dashboard) setMissingPunchInfo(dashboard);
+      const payrollsList = Array.isArray(data) ? data : [];
+      setPayrolls(payrollsList);
+      setBankTransferData(btl);
+      let summaryData = null;
+      let skipped = null;
+      let attCheck = null;
+      if (payrollsList.length > 0) {
+        summaryData = await payrollApi.getSummary(year, month);
         setSummary(summaryData);
-        
-        // Load skipped employees info
         try {
-          const skipped = await payrollApi.getSkippedEmployees(year, month);
+          skipped = await payrollApi.getSkippedEmployees(year, month);
           setSkippedEmployees(skipped);
         } catch (e) {
-          console.error('Failed to load skipped employees:', e);
+          setSkippedEmployees(null);
         }
       } else {
         setSummary(null);
         setSkippedEmployees(null);
-        // Check attendance availability if no payrolls exist
         try {
-          const check = await payrollApi.checkAttendance(year, month);
-          setAttendanceCheck(check);
+          attCheck = await payrollApi.checkAttendance(year, month);
+          setAttendanceCheck(attCheck);
         } catch (e) {
-          console.error('Failed to check attendance:', e);
+          setAttendanceCheck(null);
         }
       }
-      // Check unfixed missing punches for this month
+      let pending = [];
       try {
-        const dashboard = await attendanceApi.getMissingPunchDashboard(month, year);
-        setMissingPunchInfo(dashboard);
-      } catch (e) {
-        console.error('Failed to load missing punch status:', e);
-        setMissingPunchInfo(null);
-      }
-      // Employees who have attendance but no payroll (so we can list them to generate)
-      try {
-        const pending = await payrollApi.getPendingEmployees(year, month);
+        pending = await payrollApi.getPendingEmployees(year, month);
         setPendingEmployeesFromApi(Array.isArray(pending) ? pending : []);
       } catch (e) {
-        console.error('Failed to load pending employees:', e);
         setPendingEmployeesFromApi([]);
       }
+      payrollCacheByDevice.current[cacheKey] = {
+        payrolls: payrollsList,
+        bankTransferData: btl,
+        summary: summaryData,
+        skippedEmployees: skipped,
+        attendanceCheck: attCheck,
+        pendingEmployeesFromApi: Array.isArray(pending) ? pending : [],
+      };
     } catch (error) {
-      console.error('Failed to load payrolls:', error);
+      console.error('Failed to load payroll data:', error);
       setMessage({ type: 'error', text: 'Failed to load payroll data' });
     } finally {
       setLoading(false);
@@ -109,11 +153,26 @@ function PayrollGen() {
   useEffect(() => {
     setLastGenerateResult(null);
     setSelectedPendingEmpCodes([]);
+    payrollCacheByDevice.current = {};
     try { sessionStorage.removeItem(storageKey()); } catch (_) {}
-    loadPayrolls();
+    loadInitial();
   }, [year, month]);
 
-  // After loadPayrolls, restore "skipped missing punch" list from storage so list survives page refresh
+
+  useEffect(() => {
+    if (selectedDeviceCode !== '__none__') {
+      loadPayrollData();
+    } else {
+      setPayrolls([]);
+      setSummary(null);
+      setBankTransferData(null);
+      setSkippedEmployees(null);
+      setAttendanceCheck(null);
+      setPendingEmployeesFromApi([]);
+    }
+  }, [selectedDeviceCode, year, month]);
+
+  // After loadPayrollData, restore "skipped missing punch" list from storage so list survives page refresh
   useEffect(() => {
     if (!payrolls.length || lastGenerateResult !== null) return;
     try {
@@ -130,18 +189,15 @@ function PayrollGen() {
       setGenerating(true);
       setMessage(null);
       setLastGenerateResult(null);
-      const data = await payrollApi.generate(year, month);
+      const deviceCode = selectedDeviceCode === '__none__' || selectedDeviceCode === '' ? null : selectedDeviceCode;
+      const data = await payrollApi.generate(year, month, undefined, deviceCode);
       setMessage({ type: 'success', text: data.message || `Payroll generated for ${data.count ?? 0} employee(s).` });
       const skip = { skippedMissingPunch: data.skippedMissingPunch || [], skippedNoAttendance: data.skippedNoAttendance || [] };
       setLastGenerateResult(skip);
       try { sessionStorage.setItem(`payrollPendingSkip_${getTenantId()}_${year}_${month}`, JSON.stringify(skip.skippedMissingPunch)); } catch (_) {}
       setAttendanceCheck(null);
-      await loadPayrolls();
-      // Refresh missing-punch state so "pending" list is up to date
-      try {
-        const dashboard = await attendanceApi.getMissingPunchDashboard(month, year);
-        setMissingPunchInfo(dashboard);
-      } catch (_) {}
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to generate payroll:', error);
       if (error.isAttendanceError) {
@@ -162,7 +218,8 @@ function PayrollGen() {
     try {
       await payrollApi.approve(id);
       setMessage({ type: 'success', text: 'Payroll approved!' });
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to approve payroll:', error);
       setMessage({ type: 'error', text: 'Failed to approve payroll' });
@@ -173,7 +230,8 @@ function PayrollGen() {
     try {
       await payrollApi.approveAll(year, month);
       setMessage({ type: 'success', text: 'All payrolls approved!' });
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to approve all:', error);
       setMessage({ type: 'error', text: 'Failed to approve all payrolls' });
@@ -378,8 +436,8 @@ function PayrollGen() {
         console.error('Failed to recalculate payroll:', error);
       }
       
-      // Reload payrolls to update DUE column
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
       
       // Reset form
       setNewDue({ amount: '', description: '', period: '', remarks: '' });
@@ -396,7 +454,8 @@ function PayrollGen() {
       await payrollApi.markAsPaid(selectedPayroll.id, paymentDetails);
       setMessage({ type: 'success', text: `Payment processed for ${selectedPayroll.empName}!` });
       setShowPaymentModal(false);
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to process payment:', error);
       setMessage({ type: 'error', text: 'Failed to process payment' });
@@ -426,7 +485,8 @@ function PayrollGen() {
       await payrollApi.payAll(year, month, paymentDetails);
       setMessage({ type: 'success', text: 'All payments processed!' });
       setShowPaymentModal(false);
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to process all payments:', error);
       setMessage({ type: 'error', text: 'Failed to process payments' });
@@ -453,7 +513,8 @@ function PayrollGen() {
     try {
       await payrollApi.delete(id);
       setMessage({ type: 'success', text: 'Payroll deleted!' });
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to delete payroll:', error);
       setMessage({ type: 'error', text: 'Cannot delete payroll (must be in DRAFT status)' });
@@ -469,7 +530,8 @@ function PayrollGen() {
       } else {
         setMessage({ type: 'error', text: result.error || 'Failed to delete payrolls' });
       }
-      await loadPayrolls();
+      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to delete payrolls:', error);
       const errorMsg = error.error || error.message || 'Cannot delete payrolls (all must be in DRAFT status)';
@@ -506,10 +568,45 @@ function PayrollGen() {
     );
   };
 
+  // Device list: always from devices API (ordered by id = first created first) for correct codes/names
+  const deviceList = allDevices.map(d => ({
+    deviceCode: d.deviceCode,
+    deviceName: d.deviceName != null && d.deviceName !== "" ? d.deviceName : d.deviceCode
+  }));
+  const payrollIdsForDevice = selectedDeviceCode && selectedDeviceCode !== '__none__' && bankTransferData?.devices
+    ? (bankTransferData.devices.find(d => d.deviceCode === selectedDeviceCode)?.employees || []).map(e => e.id)
+    : null;
+  // When __none__ → no data; when "All" (empty) → show all payrolls; when device selected → filter by device
+  const displayedPayrolls = selectedDeviceCode === '__none__'
+    ? []
+    : selectedDeviceCode === ""
+    ? payrolls
+    : (payrollIdsForDevice != null && payrollIdsForDevice.length > 0
+        ? payrolls.filter(p => payrollIdsForDevice.includes(p.id))
+        : []);
+
   return (
     <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
-      {/* Header Controls */}
+      {/* Biometric device first – then period & actions */}
       <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-6 bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
+        {/* 1. Biometric device dropdown (first) */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-600">Biometric device:</label>
+          <select
+            value={selectedDeviceCode}
+            onChange={(e) => setSelectedDeviceCode(e.target.value)}
+            className="border rounded px-3 py-2 bg-white min-w-[180px]"
+          >
+            <option value="__none__">Select biometric device...</option>
+            <option value="">All biometric devices</option>
+            {deviceList.map((d) => (
+              <option key={d.deviceCode} value={d.deviceCode}>
+                {d.deviceName || d.deviceCode}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* 2. Month / Year */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-600">Month:</label>
           <select 
@@ -534,10 +631,27 @@ function PayrollGen() {
             ))}
           </select>
         </div>
+        {/* Generate Payroll: disabled until attendance is available for this month; show requirement message */}
+        {selectedDeviceCode === '__none__' && (
+          <div className="px-4 py-2 bg-slate-100 border border-slate-200 rounded text-slate-700 text-sm">
+            Select a biometric device to view or generate payroll.
+          </div>
+        )}
+        {selectedDeviceCode !== '__none__' && payrolls.length === 0 && !loading && attendanceCheck && !attendanceCheck.available && (
+          <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm font-medium">
+            {attendanceCheck.message || "Import attendance for this month before generating payroll."}
+          </div>
+        )}
+        {selectedDeviceCode !== '__none__' && payrolls.length === 0 && !loading && attendanceCheck == null && (
+          <div className="px-4 py-2 bg-slate-100 border border-slate-200 rounded text-slate-700 text-sm">
+            Unable to verify attendance. Click Refresh to try again.
+          </div>
+        )}
         <button
           onClick={generatePayroll}
-          disabled={generating}
+          disabled={generating || selectedDeviceCode === '__none__' || (payrolls.length === 0 && !attendanceCheck?.available)}
           className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          title={selectedDeviceCode === '__none__' ? 'Select a biometric device first' : (payrolls.length === 0 && !attendanceCheck?.available ? (attendanceCheck?.message || "Import attendance first") : undefined)}
         >
           {generating ? '⏳ Generating...' : '📊 Generate Payroll'}
         </button>
@@ -559,11 +673,7 @@ function PayrollGen() {
             <button
               onClick={handleExportExcel}
               disabled={payrolls.length === 0}
-              className={`px-4 py-2 rounded font-medium flex items-center gap-2 ${
-                payrolls.length === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
+              className={payrolls.length === 0 ? "px-4 py-2 rounded font-medium flex items-center gap-2 bg-gray-300 text-gray-500 cursor-not-allowed" : "px-4 py-2 rounded font-medium flex items-center gap-2 bg-green-600 text-white hover:bg-green-700"}
               title="Export payroll to Excel"
             >
               📥 Export Excel
@@ -577,101 +687,54 @@ function PayrollGen() {
           </>
         )}
         <button
-          onClick={loadPayrolls}
+          onClick={() => {
+            loadInitial();
+            if (selectedDeviceCode !== '__none__') loadPayrollData(true);
+          }}
           className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200"
+          title="Refresh (bypass cache)"
         >
           🔄 Refresh
         </button>
       </div>
 
-      {/* All clear – green signal */}
+      {/* All clear – compact */}
       {missingPunchInfo && (missingPunchInfo.totalIssues || 0) === 0 && (attendanceCheck?.available || payrolls.length > 0) && (
-        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-300 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">✅</span>
-            <div>
-              <h4 className="font-bold text-emerald-900">All attendance clear</h4>
-              <p className="text-emerald-800 mt-1">
-                You can generate payroll for all employees with attendance for this month.
-              </p>
-            </div>
-          </div>
+        <div className="mb-3 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+          <span className="flex items-center gap-2 text-emerald-800 text-sm font-medium">✅ All attendance clear — generate payroll for all employees with attendance.</span>
         </div>
       )}
 
-      {/* Pending: missing punch – payroll generated only for clear employees */}
+      {/* Partial payroll – compact (no banner link; list below shows employees) */}
       {missingPunchInfo && (missingPunchInfo.totalIssues || 0) > 0 && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div className="flex-1">
-              <h4 className="font-bold text-amber-900">Partial payroll possible</h4>
-              <p className="text-amber-800 mt-1">
-                Payroll is generated only for employees with clear attendance. {missingPunchInfo.totalEmployeesWithIssues || 0} employee(s) have unfixed missing punch — fix to include them in payroll.
-              </p>
-              <p className="text-sm text-amber-700 mt-2">
-                {missingPunchInfo.totalIssues} unfixed day(s) this month.
-              </p>
-              <Link
-                to="/attendance/missing-punch"
-                className="inline-block mt-3 px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium text-sm"
-              >
-                Go to Missing Punch Fix →
-              </Link>
-            </div>
-          </div>
+        <div className="mb-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+          <span className="text-amber-800 text-sm">
+            ⚠️ {missingPunchInfo.totalEmployeesWithIssues || 0} employee(s) with unfixed missing punch ({missingPunchInfo.totalIssues} day(s)) — fix to include in payroll.
+          </span>
         </div>
       )}
 
-      {/* After generate: show who was skipped (missing punch) + green next step */}
+      {/* After generate: skipped (missing punch) – compact */}
       {lastGenerateResult && (lastGenerateResult.skippedMissingPunch?.length || 0) > 0 && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-bold text-blue-900 mb-2">Payroll not generated (missing punch)</h4>
-          <p className="text-blue-800 text-sm mb-3">
-            The following employees were skipped. Fix their missing punches, then click <strong>Refresh</strong> and <strong>Generate Payroll</strong> again to add them.
-          </p>
-          <ul className="list-disc list-inside text-blue-800 text-sm space-y-1 mb-3">
-            {(lastGenerateResult.skippedMissingPunch || []).map((e, i) => (
-              <li key={i}><strong>{e.empCode}</strong> — {e.empName}</li>
-            ))}
-          </ul>
-          <div className="flex items-center gap-3">
-            <Link
-              to="/attendance/missing-punch"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm"
-            >
-              Fix missing punch →
-            </Link>
-            <span className="text-blue-600 text-sm">After fixing, refresh this page and run Generate Payroll again.</span>
-          </div>
+        <div className="mb-3 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-blue-800 text-sm">
+            Skipped (missing punch): {(lastGenerateResult.skippedMissingPunch || []).map(e => e.empCode).join(', ')}. Fix on Missing Punch page, then Refresh and Generate again.
+          </span>
+          <Link to="/attendance/missing-punch" className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm whitespace-nowrap">Fix missing punch →</Link>
         </div>
       )}
 
-      {/* After fix: green signal – you can generate for pending */}
+      {/* After fix: ready for remaining – compact */}
       {missingPunchInfo && (missingPunchInfo.totalIssues || 0) === 0 && payrolls.length > 0 && lastGenerateResult?.skippedMissingPunch?.length > 0 && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-300 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">✅</span>
-            <div>
-              <h4 className="font-bold text-green-900">Ready for remaining employees</h4>
-              <p className="text-green-800 mt-1">
-                Missing punches are fixed. Click <strong>Generate Payroll</strong> again to generate payroll for the employees who were pending.
-              </p>
-            </div>
-          </div>
+        <div className="mb-3 px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+          <span className="text-green-800 text-sm font-medium">✅ Missing punches fixed. Click Generate Payroll again to add remaining employees.</span>
         </div>
       )}
 
-      {/* Skipped (no attendance) – highlight */}
+      {/* Skipped (no attendance) – compact */}
       {lastGenerateResult && (lastGenerateResult.skippedNoAttendance?.length || 0) > 0 && (
-        <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-          <h4 className="font-bold text-slate-800 mb-2">Payroll not generated (no attendance)</h4>
-          <p className="text-slate-600 text-sm mb-2">These employees had no attendance for this month:</p>
-          <ul className="list-disc list-inside text-slate-700 text-sm space-y-1">
-            {(lastGenerateResult.skippedNoAttendance || []).map((e, i) => (
-              <li key={i}><strong>{e.empCode}</strong> — {e.empName}</li>
-            ))}
-          </ul>
+        <div className="mb-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+          <span className="text-slate-700 text-sm">Skipped (no attendance): {(lastGenerateResult.skippedNoAttendance || []).map(e => e.empCode).join(', ')}.</span>
         </div>
       )}
 
@@ -700,39 +763,50 @@ function PayrollGen() {
           else setSelectedPendingEmpCodes(prev => [...new Set([...prev, ...readyEmpCodes])]);
         };
         return (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <h4 className="font-bold text-amber-900 mb-2">Employees whose payroll is not processed</h4>
-            <p className="text-amber-800 text-sm mb-2">
-              After fixing missing punches on the Missing Punch Fix page, click <strong>Refresh list</strong> below so they show as &quot;Ready — generate payroll&quot; with a checkbox. Use <strong>Select all</strong> to select all ready employees, then click <strong>Generate payroll for selected</strong> once to generate in one go.
-            </p>
-            <div className="flex flex-wrap items-center gap-3 mb-3">
+          <details className="mb-3 bg-amber-50 border border-amber-200 rounded-lg group" open={!!(missingPunchInfo?.employees?.length)}>
+            <summary className="px-4 py-2.5 cursor-pointer list-none flex items-center justify-between gap-3 flex-wrap font-medium text-amber-900 text-sm">
+              <span>Employees whose payroll is not processed ({pendingForPayroll.length})</span>
+              <span className="text-amber-700 font-normal text-xs flex items-center gap-2 flex-wrap">
+                <span className="hidden sm:inline">View list: employees whose attendance needs resolution (missing punch).</span>
+                Fix missing punch → Refresh list → Select ready → Generate for selected
+              </span>
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded border border-amber-300 bg-amber-100/80 text-amber-800 shrink-0" aria-hidden>
+                <svg className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 pt-0 border-t border-amber-200/80">
+            <div className="flex flex-wrap items-center gap-2 mb-2 mt-2">
               <button
                 type="button"
                 onClick={async () => {
                   try {
                     const [dashboard, pending] = await Promise.all([
-                      attendanceApi.getMissingPunchDashboard(month, year),
+                      attendanceApi.getMissingPunchDashboard(month, year, true),
                       payrollApi.getPendingEmployees(year, month),
                     ]);
                     setMissingPunchInfo(dashboard);
                     setPendingEmployeesFromApi(Array.isArray(pending) ? pending : []);
-                    setMessage({ type: 'success', text: 'List refreshed. Employees you fixed should now show as Ready.' });
-                    setTimeout(() => setMessage(null), 3000);
+                    const fixedCount = (dashboard?.employees?.length ?? 0) < (missingPunchInfo?.employees?.length ?? 0) ? ' Employees you fixed should now show as Ready.' : '';
+                    setMessage({ type: 'success', text: 'List refreshed.' + fixedCount });
+                    setTimeout(() => setMessage(null), 4000);
+                    delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
                   } catch (e) {
-                    setMessage({ type: 'error', text: 'Failed to refresh list.' });
+                    setMessage({ type: 'error', text: 'Failed to refresh list. ' + (e?.message || '') });
                   }
                 }}
-                className="px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium text-sm"
+                className="px-2.5 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium text-xs"
               >
                 🔄 Refresh list
               </button>
               {readyCount > 0 && (
                 <>
-                  <span className="text-green-700 text-sm font-medium">{readyCount} employee(s) ready</span>
+                  <span className="text-green-700 text-xs font-medium">{readyCount} ready</span>
                   <button
                     type="button"
                     onClick={toggleSelectAllReady}
-                    className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 rounded hover:bg-amber-100 font-medium text-sm"
+                    className="px-2.5 py-1 bg-white border border-amber-300 text-amber-800 rounded hover:bg-amber-100 font-medium text-xs"
                   >
                     {allReadySelected ? 'Deselect all' : 'Select all ready'}
                   </button>
@@ -744,36 +818,76 @@ function PayrollGen() {
                       setMessage(null);
                       try {
                         const data = await payrollApi.generateBatch(year, month, selectedPendingEmpCodes);
-                        setMessage({ type: 'success', text: data.message || `Generated for ${data.count ?? 0} employee(s).` });
+                        const count = data.count != null ? data.count : 0;
+                        const skippedMissing = data.skippedMissingPunch || [];
+                        const skippedNoAtt = data.skippedNoAttendance || [];
+                        let msg = data.message || "Generated for " + count + " employee(s).";
+                        if (count === 0 && (skippedMissing.length > 0 || skippedNoAtt.length > 0)) {
+                          if (skippedMissing.length > 0) {
+                            msg = "No payroll generated. " + skippedMissing.length + " employee(s) still have unfixed missing punch: " + skippedMissing.map((e) => e.empName || e.empCode).join(", ") + ". Fix on Missing Punch page and try again.";
+                            setMessage({ type: 'error', text: msg });
+                          } else {
+                            msg = "No payroll generated. " + skippedNoAtt.length + " employee(s) have no attendance: " + skippedNoAtt.map((e) => e.empName || e.empCode).join(", ") + ".";
+                            setMessage({ type: 'error', text: msg });
+                          }
+                        } else {
+                          setMessage({ type: 'success', text: msg });
+                        }
+                        const generatedEmpCodes = [...selectedPendingEmpCodes];
                         setSelectedPendingEmpCodes([]);
-                        const updated = (lastGenerateResult?.skippedMissingPunch || []).filter(e => !selectedPendingEmpCodes.includes(e.empCode));
+                        const updated = (lastGenerateResult?.skippedMissingPunch || []).filter(e => !generatedEmpCodes.includes(e.empCode));
                         setLastGenerateResult(prev => ({ ...prev, skippedMissingPunch: updated }));
                         try { sessionStorage.setItem(storageKey(), JSON.stringify(updated)); } catch (_) {}
-                        await loadPayrolls();
-                        try { setMissingPunchInfo(await attendanceApi.getMissingPunchDashboard(month, year)); } catch (_) {}
+                        if (count > 0 && Array.isArray(data.payrolls) && data.payrolls.length > 0) {
+                          setPayrolls(prev => {
+                            const existingIds = new Set(prev.map(p => p.id));
+                            const toAdd = data.payrolls.filter(p => !existingIds.has(p.id));
+                            return [...prev, ...toAdd].sort((a, b) => (a.empId || '').localeCompare(b.empId || ''));
+                          });
+                          setBankTransferData(prev => {
+                            const toAdd = data.payrolls.map(p => ({ id: p.id, empId: p.empId, empName: p.empName || p.empId, empCode: p.empId, accountNumber: '', ifsc: '', branch: '', netAmount: p.netSalary ?? 0, grossAmount: p.grossSalary ?? 0, amount: p.netSalary ?? 0 }));
+                            if (!prev?.devices) return { year, month, devices: [{ deviceCode: selectedDeviceCode, deviceName: selectedDeviceCode, employees: toAdd }] };
+                            const dev = prev.devices.find(d => d.deviceCode === selectedDeviceCode);
+                            if (!dev) return { ...prev, devices: [...prev.devices, { deviceCode: selectedDeviceCode, deviceName: selectedDeviceCode, employees: toAdd }] };
+                            const existingIds = new Set((dev.employees || []).map(e => e.id));
+                            const toAddFiltered = toAdd.filter(p => !existingIds.has(p.id));
+                            return { ...prev, devices: prev.devices.map(d => d.deviceCode === selectedDeviceCode ? { ...d, employees: [...(d.employees || []), ...toAddFiltered] } : d) };
+                          });
+                          setSummary(s => {
+                            if (!s) return null;
+                            const added = data.payrolls;
+                            const add = (v, f) => (v || 0) + added.reduce((sum, p) => sum + (f(p) || 0), 0);
+                            return { ...s, employeeCount: (s.employeeCount || 0) + added.length, totalGrossSalary: add(s.totalGrossSalary, p => p.grossSalary), totalNetSalary: add(s.totalNetSalary, p => p.netSalary), totalDeductions: add(s.totalDeductions, p => p.totalDeductions) };
+                          });
+                          setPendingEmployeesFromApi(prev => prev.filter(e => !generatedEmpCodes.includes(e.empCode)));
+                          delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+                        } else {
+                          delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+                          await loadPayrollData(true);
+                        }
                       } catch (err) {
                         setMessage({ type: 'error', text: err.message || 'Failed to generate payroll for selected.' });
                       } finally {
                         setGeneratingBatch(false);
                       }
                     }}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 font-medium text-sm"
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 font-medium text-xs"
                   >
-                    {generatingBatch ? '⏳ Generating...' : `📊 Generate payroll for selected (${selectedPendingEmpCodes.length})`}
+                    {generatingBatch ? "⏳ Generating..." : "📊 Generate selected (" + selectedPendingEmpCodes.length + ")"}
                   </button>
                   {selectedPendingEmpCodes.length > 0 && (
-                    <button type="button" onClick={() => setSelectedPendingEmpCodes([])} className="text-slate-600 hover:text-slate-800 text-sm font-medium">
-                      Clear selection
+                    <button type="button" onClick={() => setSelectedPendingEmpCodes([])} className="text-slate-600 hover:text-slate-800 text-xs font-medium">
+                      Clear
                     </button>
                   )}
                 </>
               )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-amber-200">
-                    <th className="text-left py-2 pr-2 w-10">
+                    <th className="text-left py-1.5 pr-2 w-10">
                       {readyCount > 0 ? (
                         <label className="flex items-center gap-1 cursor-pointer">
                           <input
@@ -783,21 +897,21 @@ function PayrollGen() {
                             onChange={toggleSelectAllReady}
                             className="rounded"
                           />
-                          <span className="text-xs font-medium text-amber-900">Select all</span>
+                          <span className="font-medium text-amber-900">Select all</span>
                         </label>
                       ) : (
                         'Select'
                       )}
                     </th>
-                    <th className="text-left py-2">Emp Code</th>
-                    <th className="text-left py-2">Name</th>
-                    <th className="text-left py-2">Status</th>
+                    <th className="text-left py-1.5">Emp Code</th>
+                    <th className="text-left py-1.5">Name</th>
+                    <th className="text-left py-1.5">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pendingForPayroll.map((e) => (
                     <tr key={e.empCode} className="border-b border-amber-100">
-                      <td className="py-2 pr-2">
+                      <td className="py-1 pr-2">
                         {e.ready ? (
                           <input
                             type="checkbox"
@@ -806,14 +920,14 @@ function PayrollGen() {
                             className="rounded"
                           />
                         ) : (
-                          <span className="text-amber-600 text-xs">Fix first</span>
+                          <span className="text-amber-600">Fix first</span>
                         )}
                       </td>
-                      <td className="font-medium">{e.empCode}</td>
-                      <td>{e.empName}</td>
-                      <td>
+                      <td className="py-1 font-medium">{e.empCode}</td>
+                      <td className="py-1">{e.empName}</td>
+                      <td className="py-1">
                         {e.ready ? (
-                          <span className="text-green-700 font-medium">Ready — generate payroll</span>
+                          <span className="text-green-700 font-medium">Ready</span>
                         ) : (
                           <span className="text-amber-700">Missing punch not fixed</span>
                         )}
@@ -825,37 +939,24 @@ function PayrollGen() {
             </div>
             {pendingForPayroll.some(e => !e.ready) && (
               <p className="mt-2 text-amber-700 text-xs">
-                <Link to="/attendance/missing-punch" className="underline font-medium">Go to Missing Punch Fix</Link> to resolve, then return here and click <strong>Refresh list</strong> above.
+                <Link to="/attendance/missing-punch" className="underline font-medium">Missing Punch Fix</Link> → then Refresh list above.
               </p>
             )}
-          </div>
+            </div>
+          </details>
         );
       })()}
 
-      {/* Attendance Warning */}
+      {/* Attendance Warning – compact */}
       {attendanceCheck && !attendanceCheck.available && payrolls.length === 0 && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <h4 className="font-bold text-yellow-800">Attendance Not Uploaded</h4>
-              <p className="text-yellow-700 mt-1">{attendanceCheck.message}</p>
-              <div className="mt-2 text-sm text-yellow-600">
-                <span>Total Employees: {attendanceCheck.totalEmployees}</span>
-                <span className="mx-2">|</span>
-                <span>With Attendance: {attendanceCheck.employeesWithAttendance}</span>
-              </div>
-            </div>
-          </div>
+        <div className="mb-3 px-4 py-2.5 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-yellow-800 text-sm">⚠️ {attendanceCheck.message} (Employees: {attendanceCheck.totalEmployees}, With attendance: {attendanceCheck.employeesWithAttendance})</span>
         </div>
       )}
 
       {/* Message */}
       {message && (
-        <div className={`mb-4 p-4 rounded-lg ${
-          message.type === 'success' ? 'bg-green-100 text-green-800 border border-green-200' : 
-          'bg-red-100 text-red-800 border border-red-200'
-        }`}>
+        <div className={"mb-4 p-4 rounded-lg " + (message.type === "success" ? "bg-green-100 text-green-800 border border-green-200" : "bg-red-100 text-red-800 border border-red-200")}>
           {message.text}
           <button onClick={() => setMessage(null)} className="float-right font-bold">×</button>
         </div>
@@ -961,7 +1062,12 @@ function PayrollGen() {
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
           <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-slate-50 to-gray-50">
             <h3 className="font-bold text-lg sm:text-xl text-slate-800">
-              Payment Sheet - {getMonthName(month)} {year}
+              Payment Sheet — {getMonthName(month)} {year}
+              {selectedDeviceCode && (
+                <span className="ml-2 text-base font-normal text-emerald-700">
+                  (Device: {deviceList.find(d => d.deviceCode === selectedDeviceCode)?.deviceName || selectedDeviceCode} — {displayedPayrolls.length} of {payrolls.length})
+                </span>
+              )}
             </h3>
             <p className="text-sm text-slate-600 mt-1 flex items-center gap-2">
               <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
@@ -989,10 +1095,10 @@ function PayrollGen() {
                   <th className="px-3 py-3.5 text-center sticky left-0 bg-slate-700 z-10">
                     <input
                       type="checkbox"
-                      checked={payrolls.length > 0 && selectedPayrollIds.length === payrolls.length}
+                      checked={displayedPayrolls.length > 0 && selectedPayrollIds.length === displayedPayrolls.length}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPayrollIds(payrolls.map(p => p.id));
+                          setSelectedPayrollIds(displayedPayrolls.map(p => p.id));
                         } else {
                           setSelectedPayrollIds([]);
                         }
@@ -1023,7 +1129,9 @@ function PayrollGen() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {payrolls.map((p, idx) => (
+                {displayedPayrolls.length === 0 ? (
+                  <tr key="empty-device"><td colSpan={20} className="px-4 py-6 text-center text-slate-500">No employees for selected device.</td></tr>
+                ) : displayedPayrolls.map((p, idx) => (
                   <tr 
                     key={p.id} 
                     className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/80 cursor-pointer transition-colors`}
@@ -1131,20 +1239,20 @@ function PayrollGen() {
         </div>
       )}
 
-      {/* Details Modal - Full in-depth breakdown */}
+      {/* Details Modal - Full in-depth breakdown (scrollable when content is long) */}
       {showDetailsModal && payrollDetails && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 overflow-hidden">
-            {/* Header */}
-            <div className="p-5 bg-gradient-to-r from-slate-700 to-slate-800 text-white flex justify-between items-start sticky top-0 z-10">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full my-8 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header - stays visible at top */}
+            <div className="flex-shrink-0 p-5 bg-gradient-to-r from-slate-700 to-slate-800 text-white flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-bold tracking-tight">{payrollDetails.empName}</h3>
                 <p className="text-slate-300 text-sm mt-1">Emp: {payrollDetails.empId} • {getMonthName(payrollDetails.month)} {payrollDetails.year}</p>
               </div>
               <button onClick={() => setShowDetailsModal(false)} className="text-2xl text-white/80 hover:text-white p-1 -m-1">×</button>
             </div>
-            
-            <div className="p-5 sm:p-6 space-y-5">
+            {/* Scrollable body with visible scrollbar */}
+            <div className="p-5 sm:p-6 space-y-5 overflow-y-auto min-h-0 flex-1 overscroll-contain" style={{ scrollbarGutter: 'stable' }}>
               {/* 1. Basic & Allowance */}
               <section className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                 <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Basic & Allowance</h4>
@@ -1563,7 +1671,8 @@ function PayrollGen() {
                                   }
                                 });
                                 if (!response.ok) throw new Error('Failed to delete');
-                                await loadPayrolls();
+                                delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+                                await loadPayrollData(true);
                                 // Refresh dues list
                                 const dues = await fetch(`${API_BASE}/payroll/due/${selectedPayrollForDues.empId}/all`, {
                                   headers: {

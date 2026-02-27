@@ -54,14 +54,19 @@ const MissingPunchDashboard = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = async (keepSelectedId = null) => {
     setLoading(true);
-    setMessage(null);
+    if (!keepSelectedId) setMessage(null);
     try {
-      const response = await fetchJson(`/attendance/missing-punch-dashboard?month=${month}&year=${year}`);
+      const response = await fetchJson(`/attendance/missing-punch-dashboard?month=${month}&year=${year}&_t=${Date.now()}`);
       setData(response);
-      setSelectedEmployee(null);
       setFixes({});
+      if (keepSelectedId && response?.employees) {
+        const updated = response.employees.find(e => e.employeeId === keepSelectedId);
+        setSelectedEmployee(updated || null);
+      } else {
+        setSelectedEmployee(null);
+      }
     } catch (error) {
       console.error("Error:", error);
       setMessage({ type: "error", text: "Failed to load: " + error.message });
@@ -94,13 +99,14 @@ const MissingPunchDashboard = () => {
       return;
     }
     setSaving(true);
+    const prevSelectedId = selectedEmployee?.employeeId;
     try {
       const res = await fetchJson("/attendance/bulk-fix-missing-punch", {
         method: "POST",
         body: JSON.stringify({ fixes: fixList, updatedBy: "admin" })
       });
       setMessage({ type: res.errorCount === 0 ? "success" : "warning", text: res.message });
-      fetchData();
+      await fetchData(prevSelectedId);
     } catch (error) {
       setMessage({ type: "error", text: "Failed: " + error.message });
     } finally {
@@ -122,7 +128,7 @@ const MissingPunchDashboard = () => {
           <select value={year} onChange={e => setYear(+e.target.value)} className="border rounded px-2 py-1 text-sm">
             {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button onClick={fetchData} disabled={loading} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+          <button onClick={() => fetchData(selectedEmployee?.employeeId)} disabled={loading} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
             {loading ? "..." : "Refresh"}
           </button>
           <span className="text-xs text-gray-500">Shift: {SHIFT.inTime} - {SHIFT.outTime}</span>
@@ -160,7 +166,13 @@ const MissingPunchDashboard = () => {
         <div className="flex gap-4">
           {/* Employee List */}
           <div className="w-64 bg-white rounded shadow flex-shrink-0">
-            <div className="p-2 border-b bg-gray-50 text-sm font-medium">Employees</div>
+            <div className="p-2 border-b bg-gray-50 text-sm font-medium flex justify-between items-center">
+              <span>Employees</span>
+              <button onClick={() => fetchData(selectedEmployee?.employeeId)} disabled={loading}
+                className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50" title="Refresh list">
+                🔄
+              </button>
+            </div>
             <div className="max-h-[500px] overflow-y-auto divide-y">
               {data?.employees?.map(emp => (
                 <div 

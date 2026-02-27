@@ -46,10 +46,10 @@ function Topbar({ onMenuClick }) {
       <div className="flex items-center justify-between px-4 py-3">
         {/* Left Section */}
         <div className="flex items-center gap-4">
-          {/* Mobile menu button */}
+          {/* Mobile menu button - show when sidebar is hidden (below md) */}
           <button 
             onClick={onMenuClick}
-            className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors"
+            className="md:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors"
           >
             <span className="text-xl">☰</span>
           </button>

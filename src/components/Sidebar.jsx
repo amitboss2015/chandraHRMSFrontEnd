@@ -95,18 +95,18 @@ function Sidebar({ isOpen, onClose }) {
       {/* Overlay for mobile */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden" 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
           onClick={onClose}
         ></div>
       )}
       
-      {/* Sidebar */}
+      {/* Sidebar - visible on md+ (768px), slide-in on smaller screens */}
       <div className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        w-72 lg:w-64 bg-gradient-to-b from-slate-800 to-slate-900 
-        text-white flex flex-col
+        fixed md:static inset-y-0 left-0 z-50 flex-shrink-0
+        w-72 md:w-64 bg-gradient-to-b from-slate-800 to-slate-900 
+        text-white flex flex-col overflow-x-hidden
         transform transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Header */}
         <div className="p-5 border-b border-white/10">
@@ -179,9 +179,9 @@ function Sidebar({ isOpen, onClose }) {
                             : 'hover:bg-white/5 text-slate-300'
                           }`}
                       >
-                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-lg flex-shrink-0">{item.icon}</span>
                         <span className="flex-1 text-sm font-medium">{item.label}</span>
-                        <span className={`text-xs transition-transform ${expandedMenus[item.label] || isActiveParent(item.children) ? 'rotate-90' : ''}`}>
+                        <span className={`text-xs flex-shrink-0 transition-transform ${expandedMenus[item.label] || isActiveParent(item.children) ? 'rotate-90' : ''}`}>
                           ▶
                         </span>
                       </button>
@@ -235,8 +235,8 @@ function Sidebar({ isOpen, onClose }) {
                           }`
                         }
                       >
-                        <span className="text-lg">{item.icon}</span>
-                        <span className="text-sm font-medium">{item.label}</span>
+                        <span className="text-lg flex-shrink-0">{item.icon}</span>
+                        <span className="text-sm font-medium ">{item.label}</span>
                       </NavLink>
                       {/* Tooltip on hover */}
                       {item.tooltip && (

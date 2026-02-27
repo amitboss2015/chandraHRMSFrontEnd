@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePeriodSelection } from "../../utils/monthYearState";
 import TemplateSampleDisplay from "../../components/TemplateSampleDisplay";
@@ -56,8 +56,8 @@ async function fetchJson(path, options = {}) {
     return pendingRequests.get(cacheKey);
   }
   
-  // Check cache (5 second TTL for GET requests) - skip cache for attendance summary so Refresh gets fresh data
-  const skipCache = path.includes('/attendance/summary') || options.bypassCache;
+  // Skip cache for employee-specific or frequently-changing data (prevents stale data when switching employees)
+  const skipCache = path.includes('/attendance/summary') || path.includes('/attendance/logs') || options.bypassCache;
   if (!skipCache && (options.method === 'GET' || !options.method)) {
     const cached = requestCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 5000) {
@@ -593,6 +593,7 @@ function AttendanceSheet() {
   const [inlineLogs, setInlineLogs] = useState([]);
   const [inlineLoading, setInlineLoading] = useState(false);
   const [inlineError, setInlineError] = useState("");
+  const logsRequestEmpRef = useRef(null); // Track which employee's logs we requested (prevents race when switching employees)
   const [attendanceTotals, setAttendanceTotals] = useState({ 
     totalOtDeductionMins: 0, 
     totalLateDeductionMins: 0,
@@ -792,13 +793,19 @@ function AttendanceSheet() {
   };
 
   const loadInlineLogs = async () => {
-    if (!selectedEmployee) return; // Silently return if no employee selected
+    if (!selectedEmployee) return;
+    const empCodeForRequest = selectedEmployee;
+    logsRequestEmpRef.current = empCodeForRequest;
     setInlineLoading(true);
     setInlineError("");
     try {
-      const response = await fetchJson(`/attendance/logs?month=${month}&year=${year}&empCode=${selectedEmployee}`);
+      const response = await fetchJson(`/attendance/logs?month=${month}&year=${year}&empCode=${empCodeForRequest}`, { bypassCache: true });
+      // Ignore stale response if user switched to a different employee before this completed
+      if (logsRequestEmpRef.current !== empCodeForRequest) {
+        console.log('⏭️ Ignoring stale logs response for', empCodeForRequest, '(user switched to', logsRequestEmpRef.current, ')');
+        return;
+      }
       console.log('📊 Attendance logs response:', response);
-      // Handle new response structure with totals
       if (response && response.logs) {
         console.log('✅ Using new response format with logs and totals');
         setInlineLogs(Array.isArray(response.logs) ? response.logs : []);
@@ -813,17 +820,19 @@ function AttendanceSheet() {
           early: response.totalEarlyDeductionMins || 0
         });
       } else {
-        // Fallback for old response format (array)
         console.log('⚠️ Using old response format (array)');
         setInlineLogs(Array.isArray(response) ? response : []);
         setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
       }
     } catch (e) {
+      if (logsRequestEmpRef.current !== empCodeForRequest) return;
       setInlineError(e.message || "Failed to load logs");
       setInlineLogs([]);
       setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
     } finally {
-      setInlineLoading(false);
+      if (logsRequestEmpRef.current === empCodeForRequest) {
+        setInlineLoading(false);
+      }
     }
   };
   
@@ -880,7 +889,12 @@ function AttendanceSheet() {
   // Auto-load logs when employee is selected and tab is records
   useEffect(() => {
     if (activeTab === 'records' && selectedEmployee) {
+      setInlineLogs([]); // Clear previous employee's data immediately when switching
+      setInlineError("");
       loadInlineLogs();
+    } else if (!selectedEmployee) {
+      setInlineLogs([]);
+      setInlineError("");
     }
   }, [activeTab, selectedEmployee, month, year]);
 
@@ -895,13 +909,18 @@ function AttendanceSheet() {
     const otDays = inlineLogs.filter(l => l.status === 'OT_DAY' || l.isOvertimeDay).length;
     const totalMins = inlineLogs.reduce((sum, l) => sum + (l.workMinutes || 0), 0);
     const dualShifts = inlineLogs.filter(l => l.dualShift).length;
-    // Late/Early tracking
-    const lateDaysCount = inlineLogs.filter(l => l.lateIn).length;
-    const earlyOutDays = inlineLogs.filter(l => l.earlyOut).length;
-    const totalLateMins = inlineLogs.reduce((sum, l) => sum + (l.lateByMins || 0), 0);
-    const totalEarlyMins = inlineLogs.reduce((sum, l) => sum + (l.earlyByMins || 0), 0);
+    // Late/Early tracking - exclude approved days (no charges apply when approved)
+    const lateDaysCount = inlineLogs.filter(l => l.lateIn && !l.lateApproved).length;
+    const earlyOutDays = inlineLogs.filter(l => l.earlyOut && !l.earlyOutApproved).length;
+    const totalLateMins = inlineLogs.reduce((sum, l) => sum + (l.lateApproved ? 0 : (l.lateByMins || 0)), 0);
+    const totalEarlyMins = inlineLogs.reduce((sum, l) => sum + (l.earlyOutApproved ? 0 : (l.earlyByMins || 0)), 0);
     // OT hours on holidays/weekly offs
-    const totalOtMins = inlineLogs.reduce((sum, l) => sum + (l.overtimeOnHolidayMins || 0), 0);
+    // OT: holiday/weekly-off OT + working-day OT (otDeductionMins > 0 = earned)
+    const totalOtMins = inlineLogs.reduce((sum, l) => {
+      const holidayOt = l.overtimeOnHolidayMins || 0;
+      const earnedOt = (l.otDeductionMins != null && l.otDeductionMins > 0) ? l.otDeductionMins : 0;
+      return sum + holidayOt + earnedOt;
+    }, 0);
     
     // Calculate late in terms of working days
     // Shift duration: 9:00 AM to 5:30 PM = 8.5 hours = 510 min, minus 60 min break = 450 min effective
@@ -927,6 +946,8 @@ function AttendanceSheet() {
   const [summaryDevicesLoading, setSummaryDevicesLoading] = useState(false);
   const [sortBy, setSortBy] = useState("present"); // Sort field: "present", "absent", "name", "empCode"
   const [sortOrder, setSortOrder] = useState("desc"); // "asc" or "desc"
+  const [selectedForOtUpdate, setSelectedForOtUpdate] = useState([]); // empCodes selected for bulk OT allowed update
+  const [otBulkUpdating, setOtBulkUpdating] = useState(false);
 
   // Load devices for summary filter
   const loadSummaryDevices = async () => {
@@ -983,6 +1004,38 @@ function AttendanceSheet() {
     } finally {
       setSummaryLoading(false);
     }
+  };
+
+  const handleBulkOtAllowed = async (otAllowed) => {
+    if (selectedForOtUpdate.length === 0) return;
+    setOtBulkUpdating(true);
+    try {
+      await fetchJson('/employees/ot-allowed', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empCodes: selectedForOtUpdate, otAllowed }),
+      });
+      setSelectedForOtUpdate([]);
+      await loadSummary(true);
+    } catch (e) {
+      console.error('Bulk OT update failed:', e);
+      alert(e?.message || 'Failed to update OT allowed');
+    } finally {
+      setOtBulkUpdating(false);
+    }
+  };
+
+  const toggleSelectAllSummary = () => {
+    if (!sortedSummaryRows.length) return;
+    const allCodes = sortedSummaryRows.map((r) => r.empCode);
+    const allSelected = allCodes.every((c) => selectedForOtUpdate.includes(c));
+    setSelectedForOtUpdate(allSelected ? [] : allCodes);
+  };
+
+  const toggleSelectSummaryRow = (empCode) => {
+    setSelectedForOtUpdate((prev) =>
+      prev.includes(empCode) ? prev.filter((c) => c !== empCode) : [...prev, empCode]
+    );
   };
 
   // Recalculate attendance state
@@ -1141,6 +1194,8 @@ function AttendanceSheet() {
     // For accurate calculation, we should sum absent from each employee's record
     const totalAbsent = sortedSummaryRows.reduce((sum, r) => sum + (r.absent || 0), 0);
     
+    const totalOtDays = sortedSummaryRows.reduce((sum, r) => sum + (r.overtimeDays || 0), 0);
+    const totalOtMins = sortedSummaryRows.reduce((sum, r) => sum + (r.otMinutes || 0), 0);
     return {
       totalEmployees: sortedSummaryRows.length,
       totalPresent,
@@ -1150,6 +1205,8 @@ function AttendanceSheet() {
       totalHolidays,
       totalHalfDays,
       totalWorkMins: sortedSummaryRows.reduce((sum, r) => sum + (r.totalWorkMinutes || 0), 0),
+      totalOtDays,
+      totalOtMins,
     };
   }, [sortedSummaryRows, month, year]);
 
@@ -1382,7 +1439,7 @@ function AttendanceSheet() {
 
           {/* Summary Stats */}
           {summaryTotals && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
               <div className="bg-white p-4 rounded-2xl border shadow-sm">
                 <div className="text-2xl font-bold text-blue-600">{summaryTotals.totalEmployees}</div>
                 <div className="text-sm text-slate-500">Total Employees</div>
@@ -1403,14 +1460,63 @@ function AttendanceSheet() {
                 <div className="text-2xl font-bold text-purple-600">{formatDuration(summaryTotals.totalWorkMins)}</div>
                 <div className="text-sm text-slate-500">Total Work Hours</div>
               </div>
+              <div className="bg-white p-4 rounded-2xl border shadow-sm">
+                <div className="text-2xl font-bold text-orange-600">{summaryTotals.totalOtDays ?? 0}</div>
+                <div className="text-sm text-slate-500">OT Days</div>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border shadow-sm">
+                <div className="text-2xl font-bold text-indigo-600">{formatDuration(summaryTotals.totalOtMins ?? 0)}</div>
+                <div className="text-sm text-slate-500">OT Hours</div>
+              </div>
             </div>
           )}
 
+          {selectedForOtUpdate.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <span className="text-sm font-medium text-indigo-800">{selectedForOtUpdate.length} selected</span>
+              <button
+                type="button"
+                onClick={() => handleBulkOtAllowed(true)}
+                disabled={otBulkUpdating}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {otBulkUpdating ? 'Updating…' : 'Enable OT for selected'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkOtAllowed(false)}
+                disabled={otBulkUpdating}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 text-sm font-medium"
+              >
+                Disable OT for selected
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedForOtUpdate([])}
+                className="px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-sm"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
           {!summaryLoading && !summaryError && (
-            <div className="border rounded overflow-x-auto">
+            <div className="space-y-2">
+              <p className="text-sm text-slate-600">
+                <strong>OT for payroll:</strong> <strong>OT Allowed</strong> = checkbox linked to employee setting (checked = enabled for payroll). Toggle to change. Or use <strong>Select</strong> column + <strong>Enable/Disable OT for selected</strong>. If a device shows no OT hours, run <strong>Full Rebuild</strong> so OT is recalculated (e.g. for employees without shift).
+              </p>
+              <div className="border rounded overflow-x-auto">
               <table className="min-w-full border border-gray-300 text-sm">
                 <thead className="bg-gray-100">
                   <tr>
+                    <th className="border px-2 py-2 text-center w-12">
+                      <input
+                        type="checkbox"
+                        checked={sortedSummaryRows.length > 0 && sortedSummaryRows.every((r) => selectedForOtUpdate.includes(r.empCode))}
+                        onChange={toggleSelectAllSummary}
+                        title="Select all"
+                        className="rounded"
+                      />
+                    </th>
                     <th className="border px-3 py-2 text-left">Emp Code</th>
                     <th className="border px-3 py-2 text-left">Employee Name</th>
                     <th className="border px-3 py-2 text-center bg-green-50">Present</th>
@@ -1423,12 +1529,21 @@ function AttendanceSheet() {
                     <th className="border px-3 py-2 text-center bg-amber-50">Late</th>
                     <th className="border px-3 py-2 text-center">Work Hours</th>
                     <th className="border px-3 py-2 text-center bg-purple-50">OT Hours</th>
+                    <th className="border px-3 py-2 text-center bg-indigo-50">OT Allowed</th>
                     <th className="border px-3 py-2 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedSummaryRows.length ? sortedSummaryRows.map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="border px-2 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedForOtUpdate.includes(r.empCode)}
+                          onChange={() => toggleSelectSummaryRow(r.empCode)}
+                          className="rounded"
+                        />
+                      </td>
                       <td className="border px-3 py-2 font-mono">{r.empCode}</td>
                       <td className="border px-3 py-2 font-medium">{r.empName || r.name}</td>
                       <td className="border px-3 py-2 text-center text-green-600 font-bold">{r.present}</td>
@@ -1446,11 +1561,33 @@ function AttendanceSheet() {
                       <td className="border px-3 py-2 text-center">{formatDuration(r.totalWorkMinutes)}</td>
                       <td className="border px-3 py-2 text-center text-purple-600">{formatDuration(r.otMinutes)}</td>
                       <td className="border px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={r.otAllowed === true}
+                          onChange={async () => {
+                            const next = !r.otAllowed;
+                            try {
+                              await fetchJson('/employees/ot-allowed', {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ empCodes: [r.empCode], otAllowed: next }),
+                              });
+                              setSummaryRows((prev) => prev.map((row) => row.empCode === r.empCode ? { ...row, otAllowed: next } : row));
+                            } catch (e) {
+                              console.error('Update OT allowed failed:', e);
+                              alert(e?.message || 'Failed to update OT allowed');
+                            }
+                          }}
+                          title={r.otAllowed ? 'OT enabled for payroll – click to disable' : 'OT disabled for payroll – click to enable'}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="border px-3 py-2 text-center">
                         <button
                           onClick={() => {
                             setSelectedEmployee(r.empCode);
                             setActiveTab("records");
-                            setTimeout(() => loadInlineLogs(), 100);
+                            // useEffect will auto-load logs when selectedEmployee + activeTab change
                           }}
                           className="text-blue-600 hover:underline text-sm"
                         >
@@ -1461,6 +1598,7 @@ function AttendanceSheet() {
                   )) : null}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -1588,12 +1726,11 @@ function AttendanceSheet() {
                   <span className="bg-purple-100 px-3 py-1 rounded-full"><strong className="text-purple-700">{logsSummary.dualShifts}</strong> <span className="text-purple-600">Dual Shifts</span></span>
                 )}
               </div>
-              {/* Time tracking row */}
+              {/* Time tracking row - always show OT Days / OT Hours in header */}
               <div className="flex flex-wrap gap-3 text-sm mt-3 pt-3 border-t border-gray-200">
                 <span className="bg-emerald-100 px-3 py-1 rounded-full">⏱️ <strong className="text-emerald-700">{formatDuration(logsSummary.totalMins)}</strong> <span className="text-emerald-600">Total Work</span></span>
-                {logsSummary.otDays > 0 && (
-                  <span className="bg-orange-100 px-3 py-1 rounded-full">⏰ <strong className="text-orange-700">{logsSummary.otDays}</strong> <span className="text-orange-600">OT Days</span> ({formatDuration(logsSummary.totalOtMins)})</span>
-                )}
+                <span className="bg-orange-100 px-3 py-1 rounded-full">⏰ <strong className="text-orange-700">{logsSummary.otDays}</strong> <span className="text-orange-600">OT Days</span></span>
+                <span className="bg-indigo-100 px-3 py-1 rounded-full">🕐 <strong className="text-indigo-700">{formatDuration(logsSummary.totalOtMins)}</strong> <span className="text-indigo-600">OT Hours</span></span>
               </div>
               {/* Late/Early summary row */}
               {(logsSummary.lateDaysCount > 0 || logsSummary.earlyOutDays > 0) && (
@@ -2624,6 +2761,12 @@ function AttendanceSheet() {
                   </div>
                 )}
 
+                {/* Validation: device required for import */}
+                {!selectedDeviceId && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+                    ⚠️ Select a biometric device (Step 0) before confirming import.
+                  </div>
+                )}
                 {/* Action Buttons */}
                 <div className="flex gap-4 justify-end">
                   <button 
@@ -2634,9 +2777,10 @@ function AttendanceSheet() {
                   </button>
                   <button 
                     onClick={handleConfirmImport}
-                    disabled={uploading}
+                    disabled={uploading || !selectedDeviceId}
+                    title={!selectedDeviceId ? "Select a biometric device first" : undefined}
                     className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium transition-all ${
-                      !uploading 
+                      !uploading && selectedDeviceId
                         ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg" 
                         : "bg-gray-300 text-gray-500 cursor-not-allowed"
                     }`}
@@ -2646,6 +2790,8 @@ function AttendanceSheet() {
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         Importing...
                       </>
+                    ) : !selectedDeviceId ? (
+                      <>🔒 Select device to enable import</>
                     ) : (
                       <>✅ Confirm & Import</>
                     )}
