@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePeriodSelection } from "../../utils/monthYearState";
+import { attendanceApi } from "../../services/api";
 
-// API helper
+// API helper (for dashboard and bulk-fix that expect JSON)
 const getApiBase = () => {
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -17,19 +18,19 @@ const getTenantId = () => localStorage.getItem("hrms_tenant_id") || "PASA";
 async function fetchJson(path, options = {}) {
   const token = getToken();
   const tenantId = getTenantId();
-  
+
   const headers = {
     "Content-Type": "application/json",
     "X-Tenant-Id": tenantId,
     ...(options.headers || {}),
   };
-  
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
   const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  
+
   if (!resp.ok) {
     const text = await resp.text();
     if (resp.status === 401 || resp.status === 403) {
@@ -53,6 +54,11 @@ const MissingPunchDashboard = () => {
   const [fixes, setFixes] = useState({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [templateDownloading, setTemplateDownloading] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importUploading, setImportUploading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const fileInputRef = useRef(null);
 
   const fetchData = async (keepSelectedId = null) => {
     setLoading(true);
@@ -114,6 +120,59 @@ const MissingPunchDashboard = () => {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    setTemplateDownloading(true);
+    setMessage(null);
+    try {
+      const blob = await attendanceApi.downloadMissingPunchTemplate(month, year);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `missing_punch_fix_${year}_${String(month).padStart(2, "0")}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      setMessage({ type: "success", text: "Template downloaded. Fill manual_in and manual_out (HH:mm), then import." });
+    } catch (e) {
+      setMessage({ type: "error", text: "Download failed: " + (e.message || "Unknown error") });
+    } finally {
+      setTemplateDownloading(false);
+    }
+  };
+
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      setMessage({ type: "warning", text: "Please select an Excel file first." });
+      return;
+    }
+    const name = (importFile.name || "").toLowerCase();
+    if (!name.endsWith(".xlsx") && !name.endsWith(".xls")) {
+      setMessage({ type: "warning", text: "Please upload a valid Excel file (.xlsx or .xls)." });
+      return;
+    }
+    setImportUploading(true);
+    setMessage(null);
+    setImportResult(null);
+    const prevSelectedId = selectedEmployee?.employeeId;
+    try {
+      const res = await attendanceApi.importMissingPunchExcel(importFile, month, year);
+      setImportResult(res);
+      const ok = res.success && (res.errorCount || 0) === 0;
+      setMessage({
+        type: ok ? "success" : (res.errorCount > 0 ? "warning" : "error"),
+        text: res.message || (ok ? `Fixed ${res.successCount || 0} record(s).` : "Import completed with errors.")
+      });
+      if (res.successCount > 0) await fetchData(prevSelectedId);
+      setImportFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (e) {
+      setMessage({ type: "error", text: "Import failed: " + (e.message || "Unknown error") });
+    } finally {
+      setImportUploading(false);
+    }
+  };
+
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   return (
@@ -132,6 +191,36 @@ const MissingPunchDashboard = () => {
             {loading ? "..." : "Refresh"}
           </button>
           <span className="text-xs text-gray-500">Shift: {SHIFT.inTime} - {SHIFT.outTime}</span>
+          {/* Bulk fix via Excel */}
+          <span className="inline-block w-px h-6 bg-gray-300" aria-hidden />
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            disabled={templateDownloading || loading}
+            className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {templateDownloading ? "..." : "📥 Download template"}
+          </button>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={e => setImportFile(e.target.files?.[0] || null)}
+            />
+            <span className="border rounded px-2 py-1.5 text-sm bg-white text-gray-700 hover:bg-gray-50">
+              {importFile ? importFile.name : "Choose file…"}
+            </span>
+          </label>
+          <button
+            type="button"
+            onClick={handleImportExcel}
+            disabled={importUploading || !importFile}
+            className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {importUploading ? "..." : "📤 Import Excel"}
+          </button>
         </div>
 
         {message && (
@@ -142,6 +231,17 @@ const MissingPunchDashboard = () => {
             {message.text}
             <button onClick={() => setMessage(null)} className="font-bold ml-2">×</button>
           </div>
+        )}
+        {importResult && (importResult.errors?.length > 0 || importResult.parseErrors?.length) && (
+          <details className="mb-3 bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+            <summary className="cursor-pointer font-medium text-gray-700">
+              Import details ({(importResult.errors?.length || 0) + (importResult.parseErrors?.length || 0)} issue(s))
+            </summary>
+            <ul className="mt-1 list-disc list-inside text-red-700">
+              {(importResult.parseErrors || []).map((err, i) => <li key={`p-${i}`}>{err}</li>)}
+              {(importResult.errors || []).map((err, i) => <li key={`e-${i}`}>{err}</li>)}
+            </ul>
+          </details>
         )}
 
         {/* Summary */}

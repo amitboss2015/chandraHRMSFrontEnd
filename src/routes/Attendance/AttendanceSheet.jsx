@@ -901,9 +901,8 @@ function AttendanceSheet() {
   // Calculate summary from logs
   const logsSummary = useMemo(() => {
     if (!inlineLogs.length) return null;
-    const present = inlineLogs.filter(l => l.status === 'PRESENT' || l.status === 'HALF_DAY' || l.status === 'OT_DAY').length;
+    const present = inlineLogs.filter(l => l.status === 'PRESENT' || l.status === 'OT_DAY').length;
     const absent = inlineLogs.filter(l => l.status === 'ABSENT').length;
-    const halfDays = inlineLogs.filter(l => l.status === 'HALF_DAY').length;
     const weeklyOff = inlineLogs.filter(l => l.status === 'WEEKLY_OFF' || (l.isWeeklyOff && l.status !== 'OT_DAY')).length;
     const holidays = inlineLogs.filter(l => l.status === 'HOLIDAY' || (l.isHoliday && l.status !== 'OT_DAY')).length;
     const otDays = inlineLogs.filter(l => l.status === 'OT_DAY' || l.isOvertimeDay).length;
@@ -930,7 +929,7 @@ function AttendanceSheet() {
     const earlyInDays = totalEarlyMins / workingDayMins;
     
     return { 
-      present, absent, halfDays, weeklyOff, holidays, otDays, totalMins, dualShifts, 
+      present, absent, weeklyOff, holidays, otDays, totalMins, dualShifts, 
       lateDaysCount, earlyOutDays, totalLateMins, totalEarlyMins, totalOtMins,
       lateInDays: lateInDays.toFixed(2), // Late time equivalent in working days
       earlyInDays: earlyInDays.toFixed(2)
@@ -1187,8 +1186,6 @@ function AttendanceSheet() {
     const totalLeave = sortedSummaryRows.reduce((sum, r) => sum + (r.leaveDays || r.leave || 0), 0);
     const totalWeeklyOff = sortedSummaryRows.reduce((sum, r) => sum + (r.weeklyOff || 0), 0);
     const totalHolidays = sortedSummaryRows.reduce((sum, r) => sum + (r.holidays || 0), 0);
-    const totalHalfDays = sortedSummaryRows.reduce((sum, r) => sum + (r.halfDays || 0), 0);
-    
     // Calculate absent: Total working days - (Present + Leave + HalfDays/2)
     // Note: Each employee has their own working days based on their weekly off config
     // For accurate calculation, we should sum absent from each employee's record
@@ -1203,7 +1200,6 @@ function AttendanceSheet() {
       totalLeave,
       totalWeeklyOff,
       totalHolidays,
-      totalHalfDays,
       totalWorkMins: sortedSummaryRows.reduce((sum, r) => sum + (r.totalWorkMinutes || 0), 0),
       totalOtDays,
       totalOtMins,
@@ -1522,7 +1518,6 @@ function AttendanceSheet() {
                     <th className="border px-3 py-2 text-center bg-green-50">Present</th>
                     <th className="border px-3 py-2 text-center bg-red-50">Absent</th>
                     <th className="border px-3 py-2 text-center bg-blue-50">Leave</th>
-                    <th className="border px-3 py-2 text-center bg-yellow-50">Half Days</th>
                     <th className="border px-3 py-2 text-center bg-slate-100">Weekly Off</th>
                     <th className="border px-3 py-2 text-center bg-blue-100">Holidays</th>
                     <th className="border px-3 py-2 text-center bg-orange-100">OT Days</th>
@@ -1549,7 +1544,6 @@ function AttendanceSheet() {
                       <td className="border px-3 py-2 text-center text-green-600 font-bold">{r.present}</td>
                       <td className="border px-3 py-2 text-center text-red-600 font-bold">{r.absent}</td>
                       <td className="border px-3 py-2 text-center text-blue-600">{r.leaveDays || r.leave || 0}</td>
-                      <td className="border px-3 py-2 text-center text-yellow-600">{r.halfDays || 0}</td>
                       <td className="border px-3 py-2 text-center text-slate-600">{r.weeklyOff || 0}</td>
                       <td className="border px-3 py-2 text-center text-blue-700">{r.holidays || 0}</td>
                       <td className="border px-3 py-2 text-center">
@@ -1719,7 +1713,6 @@ function AttendanceSheet() {
               <div className="flex flex-wrap gap-3 text-sm">
                 <span className="bg-green-100 px-3 py-1 rounded-full"><strong className="text-green-700">{logsSummary.present}</strong> <span className="text-green-600">Present</span></span>
                 <span className="bg-red-100 px-3 py-1 rounded-full"><strong className="text-red-700">{logsSummary.absent}</strong> <span className="text-red-600">Absent</span></span>
-                <span className="bg-yellow-100 px-3 py-1 rounded-full"><strong className="text-yellow-700">{logsSummary.halfDays}</strong> <span className="text-yellow-600">Half Days</span></span>
                 <span className="bg-gray-200 px-3 py-1 rounded-full"><strong className="text-gray-700">{logsSummary.weeklyOff}</strong> <span className="text-gray-600">Weekly Off</span></span>
                 <span className="bg-blue-100 px-3 py-1 rounded-full"><strong className="text-blue-700">{logsSummary.holidays}</strong> <span className="text-blue-600">Holidays</span></span>
                 {logsSummary.dualShifts > 0 && (
@@ -1867,7 +1860,7 @@ function AttendanceSheet() {
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             log.status === 'PRESENT' ? (log.missingPunch ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800') :
                             log.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
-                            log.status === 'HALF_DAY' ? 'bg-yellow-100 text-yellow-800' :
+                            log.status === 'HALF_DAY' ? 'bg-red-100 text-red-800' :
                             log.status === 'LEAVE' ? 'bg-blue-100 text-blue-800' :
                             log.status === 'WEEKLY_OFF' ? 'bg-slate-200 text-slate-700' :
                             log.status === 'HOLIDAY' ? 'bg-blue-200 text-blue-800' :
@@ -2938,7 +2931,6 @@ function AttendanceSheet() {
                   <option value="">Auto-calculate from punch times</option>
                   <option value="PRESENT">✓ PRESENT</option>
                   <option value="ABSENT">✗ ABSENT</option>
-                  <option value="HALF_DAY">½ HALF DAY</option>
                   <option value="LEAVE">🏖️ LEAVE</option>
                   <option value="WEEKLY_OFF">📅 WEEKLY OFF</option>
                   <option value="HOLIDAY">🎉 HOLIDAY</option>

@@ -48,6 +48,8 @@ import LeaveManagement from "./routes/Leaves/LeaveManagement";
 import HolidayManagement from "./routes/Settings/HolidayManagement";
 import SalaryOvertimeConfig from "./routes/Settings/SalaryOvertimeConfig";
 import DeviceManagement from "./routes/Settings/DeviceManagement";
+import AllowanceTypes from "./routes/Settings/AllowanceTypes";
+import ManageAllowances from "./routes/Settings/ManageAllowances";
 import SuperAdminDashboard from "./routes/Admin/SuperAdminDashboard";
 // import DataManagement from "./routes/Admin/DataManagement";  // HIDDEN - Coming Soon
 
@@ -123,6 +125,8 @@ function App() {
                     <Route path="/settings/holidays" element={<HolidayManagement />} />
                     <Route path="/settings/salary-overtime" element={<SalaryOvertimeConfig />} />
                     <Route path="/settings/devices" element={<DeviceManagement />} />
+                    <Route path="/settings/allowance-types" element={<AllowanceTypes />} />
+                    <Route path="/settings/manage-allowances" element={<ManageAllowances />} />
                     {/* HIDDEN - Coming Soon */}
                     {/* <Route path="/settings/data-management" element={<DataManagement />} /> */}
                     

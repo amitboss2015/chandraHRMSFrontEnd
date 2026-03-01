@@ -1,5 +1,5 @@
 // PayrollGen.jsx - Enhanced Payroll Generation with Attendance Check, Loan/Advance Details
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { payrollApi, loanApi, attendanceApi, devicesApi, getTenantId, getToken } from "../../services/api";
 import { Link } from "react-router-dom";
 import { usePeriodSelection } from "../../utils/monthYearState";
@@ -24,6 +24,7 @@ function PayrollGen() {
   const [lastGenerateResult, setLastGenerateResult] = useState(null); // { skippedMissingPunch, skippedNoAttendance }
   const [selectedPendingEmpCodes, setSelectedPendingEmpCodes] = useState([]); // empCodes selected for "generate for selected"
   const [generatingBatch, setGeneratingBatch] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [skippedEmployees, setSkippedEmployees] = useState(null);
   const [showSkippedModal, setShowSkippedModal] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState({
@@ -190,14 +191,29 @@ function PayrollGen() {
       setMessage(null);
       setLastGenerateResult(null);
       const deviceCode = selectedDeviceCode === '__none__' || selectedDeviceCode === '' ? null : selectedDeviceCode;
-      const data = await payrollApi.generate(year, month, undefined, deviceCode);
+      const data = await payrollApi.generate(year, month, '', deviceCode);
+      const generatedList = data.payrolls && Array.isArray(data.payrolls) ? data.payrolls : [];
       setMessage({ type: 'success', text: data.message || `Payroll generated for ${data.count ?? 0} employee(s).` });
       const skip = { skippedMissingPunch: data.skippedMissingPunch || [], skippedNoAttendance: data.skippedNoAttendance || [] };
       setLastGenerateResult(skip);
       try { sessionStorage.setItem(`payrollPendingSkip_${getTenantId()}_${year}_${month}`, JSON.stringify(skip.skippedMissingPunch)); } catch (_) {}
       setAttendanceCheck(null);
-      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      // Instant reflection: set list from response so UI shows new payrolls immediately
+      setPayrolls(generatedList);
+      // Clear all device caches and refetch (summary, bank transfer list, etc.)
+      Object.keys(payrollCacheByDevice.current).forEach(k => {
+        if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
+      });
       await loadPayrollData(true);
+      // If refetch returned empty (e.g. device filter mismatch) but we had generated payrolls, restore list so UI reflects generation
+      if (generatedList.length > 0) {
+        setPayrolls(prev => (prev.length === 0 ? generatedList : prev));
+        const cacheKey = cacheKeyForDevice(selectedDeviceCode);
+        payrollCacheByDevice.current[cacheKey] = {
+          ...payrollCacheByDevice.current[cacheKey],
+          payrolls: generatedList,
+        };
+      }
     } catch (error) {
       console.error('Failed to generate payroll:', error);
       if (error.isAttendanceError) {
@@ -358,6 +374,38 @@ function PayrollGen() {
       setPayslipPdfUrl(null);
     }
     setShowPayslipViewer(false);
+  };
+
+  const handleGeneratePayrollForSelected = async () => {
+    if (selectedPayrollIds.length === 0) {
+      setMessage({ type: 'error', text: 'Select at least one employee' });
+      return;
+    }
+    const empCodes = displayedPayrolls
+      .filter(p => selectedPayrollIds.includes(p.id))
+      .map(p => p.empId)
+      .filter(Boolean);
+    if (empCodes.length === 0) {
+      setMessage({ type: 'error', text: 'No employees to regenerate' });
+      return;
+    }
+    setGeneratingBatch(true);
+    try {
+      const result = await payrollApi.generateBatch(year, month, empCodes);
+      if (result.success) {
+        setMessage({ type: 'success', text: result.message || `Regenerated payroll for ${result.count || empCodes.length} employee(s)` });
+        delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+        await loadPayrollData(true);
+        setSelectedPayrollIds([]);
+      } else {
+        setMessage({ type: 'error', text: result.message || result.error || 'Failed to regenerate' });
+      }
+    } catch (error) {
+      console.error('Failed to regenerate payroll:', error);
+      setMessage({ type: 'error', text: error.message || error.error || 'Failed to regenerate payroll' });
+    } finally {
+      setGeneratingBatch(false);
+    }
   };
 
   const downloadPayslip = () => {
@@ -522,20 +570,52 @@ function PayrollGen() {
   };
 
   const deleteAllPayrolls = async () => {
-    if (!confirm('Are you sure you want to delete ALL payrolls for this month?')) return;
+    const isDeviceScoped = selectedDeviceCode && selectedDeviceCode !== '__none__' && selectedDeviceCode !== '';
+    const confirmMsg = isDeviceScoped
+      ? `Delete payroll for ${displayedPayrolls.length} employee(s) in device "${deviceList.find(d => d.deviceCode === selectedDeviceCode)?.deviceName || selectedDeviceCode}" only?`
+      : 'Are you sure you want to delete ALL payrolls for this month?';
+    if (!confirm(confirmMsg)) return;
+    const idsToRemove = isDeviceScoped ? displayedPayrolls.map(p => p.id) : payrolls.map(p => p.id);
+    let deleteSucceeded = false;
     try {
-      const result = await payrollApi.deleteMonthly(year, month);
-      if (result.success) {
-        setMessage({ type: 'success', text: result.message || 'All payrolls deleted!' });
+      setDeletingAll(true);
+      setMessage(null);
+      const deviceCode = isDeviceScoped ? selectedDeviceCode : null;
+      const result = await payrollApi.deleteMonthly(year, month, '', deviceCode);
+      if (result && result.success !== false) {
+        deleteSucceeded = true;
+        setMessage({ type: 'success', text: result.message || 'Payroll deleted!' });
+        // Instant reflection: set list and summary to empty so UI shows no records immediately
+        setPayrolls([]);
+        setSummary(null);
+        setBankTransferData(prev => {
+          if (!prev?.devices) return prev;
+          return {
+            ...prev,
+            devices: prev.devices.map(d => ({
+              ...d,
+              employees: (d.employees || []).filter(e => !idsToRemove.includes(e.id))
+            }))
+          };
+        });
       } else {
-        setMessage({ type: 'error', text: result.error || 'Failed to delete payrolls' });
+        setMessage({ type: 'error', text: (result && result.error) || 'Failed to delete payrolls' });
       }
-      delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+      // Clear all device caches and refetch
+      Object.keys(payrollCacheByDevice.current).forEach(k => {
+        if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
+      });
       await loadPayrollData(true);
     } catch (error) {
       console.error('Failed to delete payrolls:', error);
       const errorMsg = error.error || error.message || 'Cannot delete payrolls (all must be in DRAFT status)';
       setMessage({ type: 'error', text: errorMsg });
+    } finally {
+      if (deleteSucceeded) {
+        setPayrolls([]);
+        setSummary(null);
+      }
+      setDeletingAll(false);
     }
   };
 
@@ -585,8 +665,67 @@ function PayrollGen() {
         ? payrolls.filter(p => payrollIdsForDevice.includes(p.id))
         : []);
 
+  // Summary derived from current list so counts match table and update instantly after Delete All / Generate
+  const displaySummary = useMemo(() => {
+    const list = displayedPayrolls;
+    const totalGross = list.reduce((s, p) => s + Number(p.grossSalary || 0), 0);
+    const totalDeductions = list.reduce((s, p) => {
+      const pf = Number(p.pfEmployee || 0) + Number(p.pfCompany || 0);
+      const esi = Number(p.esiEmployee || 0);
+      const late = Number(p.lateHourCharges || 0);
+      const early = Number(p.earlyHourCharges || 0);
+      const adv = Number(p.advance || 0);
+      const other = Number(p.otherDeduction || 0);
+      return s + pf + esi + late + early + adv + other;
+    }, 0);
+    const totalNet = list.reduce((s, p) => s + Number(p.netSalary || 0), 0);
+    const totalPf = list.reduce((s, p) => s + Number(p.pfEmployee || 0) + Number(p.pfCompany || 0), 0);
+    const totalEsi = list.reduce((s, p) => s + Number(p.esiEmployee || 0), 0);
+    const totalAdv = list.reduce((s, p) => s + Number(p.advance || 0), 0);
+    let draftCount = 0, approvedCount = 0, paidCount = 0;
+    list.forEach(p => {
+      if (p.status === 'DRAFT') draftCount++;
+      else if (p.status === 'APPROVED') approvedCount++;
+      else if (p.status === 'PAID') paidCount++;
+    });
+    return {
+      employeeCount: list.length,
+      totalGrossSalary: totalGross,
+      totalDeductions,
+      totalNetSalary: totalNet,
+      totalPfEmployee: totalPf / 2,
+      totalPfCompany: totalPf / 2,
+      totalEsi,
+      totalAdvance: totalAdv,
+      draftCount,
+      approvedCount,
+      paidCount,
+    };
+  }, [displayedPayrolls]);
+
   return (
-    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto relative">
+      {/* Generating / Deleting / Loading overlay – blocks UI with clear waiting message */}
+      {(generating || generatingBatch || deletingAll || loading) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm mx-4 flex flex-col items-center gap-4">
+            <div className={`animate-spin rounded-full h-14 w-14 border-4 ${
+              deletingAll ? 'border-red-200 border-t-red-600' : 
+              loading ? 'border-blue-200 border-t-blue-600' : 
+              'border-emerald-200 border-t-emerald-600'
+            }`}></div>
+            <p className="text-lg font-semibold text-slate-800">
+              {deletingAll ? 'Deleting payroll...' : 
+               loading ? 'Fetching payroll...' : 
+               generatingBatch ? 'Generating payroll for selected...' : 'Generating payroll...'}
+            </p>
+            <p className="text-sm text-slate-500 text-center">
+              Please wait. This may take a moment.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Biometric device first – then period & actions */}
       <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-6 bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
         {/* 1. Biometric device dropdown (first) */}
@@ -598,7 +737,6 @@ function PayrollGen() {
             className="border rounded px-3 py-2 bg-white min-w-[180px]"
           >
             <option value="__none__">Select biometric device...</option>
-            <option value="">All biometric devices</option>
             {deviceList.map((d) => (
               <option key={d.deviceCode} value={d.deviceCode}>
                 {d.deviceName || d.deviceCode}
@@ -680,9 +818,10 @@ function PayrollGen() {
             </button>
             <button
               onClick={deleteAllPayrolls}
-              className="bg-red-100 text-red-700 px-4 py-2 rounded hover:bg-red-200 font-medium"
+              disabled={deletingAll}
+              className="bg-red-100 text-red-700 px-4 py-2 rounded hover:bg-red-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              🗑️ Delete All
+              {deletingAll ? '⏳ Deleting...' : '🗑️ Delete All'}
             </button>
           </>
         )}
@@ -860,9 +999,13 @@ function PayrollGen() {
                             return { ...s, employeeCount: (s.employeeCount || 0) + added.length, totalGrossSalary: add(s.totalGrossSalary, p => p.grossSalary), totalNetSalary: add(s.totalNetSalary, p => p.netSalary), totalDeductions: add(s.totalDeductions, p => p.totalDeductions) };
                           });
                           setPendingEmployeesFromApi(prev => prev.filter(e => !generatedEmpCodes.includes(e.empCode)));
-                          delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+                          Object.keys(payrollCacheByDevice.current).forEach(k => {
+                            if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
+                          });
                         } else {
-                          delete payrollCacheByDevice.current[cacheKeyForDevice(selectedDeviceCode)];
+                          Object.keys(payrollCacheByDevice.current).forEach(k => {
+                            if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
+                          });
                           await loadPayrollData(true);
                         }
                       } catch (err) {
@@ -962,68 +1105,88 @@ function PayrollGen() {
         </div>
       )}
 
-      {/* Summary Cards */}
-      {summary && (
+      {/* Summary Cards – derived from current list so counts reflect table and update instantly after Delete All / Generate */}
+      {selectedDeviceCode !== '__none__' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 mb-6">
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
             <p className="text-xs text-gray-500 uppercase">Employees</p>
-            <p className="text-2xl font-bold text-blue-600">{summary.employeeCount}</p>
+            <p className="text-2xl font-bold text-blue-600">{displaySummary.employeeCount}</p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
             <p className="text-xs text-gray-500 uppercase">Gross Salary</p>
-            <p className="text-lg font-bold text-green-600">{formatCurrency(summary.totalGrossSalary)}</p>
+            <p className="text-lg font-bold text-green-600">{formatCurrency(displaySummary.totalGrossSalary)}</p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500">
             <p className="text-xs text-gray-500 uppercase">Deductions</p>
-            <p className="text-lg font-bold text-orange-600">{formatCurrency(summary.totalDeductions)}</p>
+            <p className="text-lg font-bold text-orange-600">{formatCurrency(displaySummary.totalDeductions)}</p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-purple-500">
             <p className="text-xs text-gray-500 uppercase">Net Salary</p>
-            <p className="text-lg font-bold text-purple-600">{formatCurrency(summary.totalNetSalary)}</p>
+            <p className="text-lg font-bold text-purple-600">{formatCurrency(displaySummary.totalNetSalary)}</p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-teal-500">
             <p className="text-xs text-gray-500 uppercase">PF (Own + Co.)</p>
             <p className="text-lg font-bold text-teal-600">
-              {formatCurrency((summary.totalPfEmployee || 0) + (summary.totalPfCompany || 0))}
+              {formatCurrency(displaySummary.totalPfEmployee + displaySummary.totalPfCompany)}
             </p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-pink-500">
             <p className="text-xs text-gray-500 uppercase">ESI</p>
-            <p className="text-lg font-bold text-pink-600">{formatCurrency(summary.totalEsi)}</p>
+            <p className="text-lg font-bold text-pink-600">{formatCurrency(displaySummary.totalEsi)}</p>
           </div>
           <div className="bg-white p-4 rounded-lg shadow border-l-4 border-amber-500">
             <p className="text-xs text-gray-500 uppercase">Loan/ADV</p>
-            <p className="text-lg font-bold text-amber-600">{formatCurrency(summary.totalAdvance)}</p>
+            <p className="text-lg font-bold text-amber-600">{formatCurrency(displaySummary.totalAdvance)}</p>
           </div>
         </div>
       )}
 
-      {/* Status Summary */}
-      {summary && (
+      {/* Status Summary – from current list */}
+      {selectedDeviceCode !== '__none__' && (
         <div className="flex gap-4 mb-4 items-center">
           <div className="flex gap-4 text-sm">
-            <span className="bg-gray-100 px-3 py-1 rounded">Draft: {summary.draftCount || 0}</span>
-            <span className="bg-blue-100 px-3 py-1 rounded">Approved: {summary.approvedCount || 0}</span>
-            <span className="bg-green-100 px-3 py-1 rounded">Paid: {summary.paidCount || 0}</span>
+            <span className="bg-gray-100 px-3 py-1 rounded">Draft: {displaySummary.draftCount}</span>
+            <span className="bg-blue-100 px-3 py-1 rounded">Approved: {displaySummary.approvedCount}</span>
+            <span className="bg-green-100 px-3 py-1 rounded">Paid: {displaySummary.paidCount}</span>
           </div>
           {selectedPayrollIds.length > 0 && (
-            <button
-              onClick={handleGeneratePayslip}
-              disabled={isGeneratingPayslip}
-              className="ml-auto px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isGeneratingPayslip ? (
-                <>
-                  <span className="animate-spin">⏳</span>
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <span>📄</span>
-                  <span>Generate Payslip ({selectedPayrollIds.length})</span>
-                </>
-              )}
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={handleGeneratePayrollForSelected}
+                disabled={generatingBatch}
+                className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                title="Regenerate payroll for selected employees (recalculates with latest attendance/salary)"
+              >
+                {generatingBatch ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Regenerating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🔄</span>
+                    <span>Regen Selected ({selectedPayrollIds.length})</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleGeneratePayslip}
+                disabled={isGeneratingPayslip}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isGeneratingPayslip ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📄</span>
+                    <span>Generate Payslip ({selectedPayrollIds.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1157,7 +1320,9 @@ function PayrollGen() {
                     <td className="px-3 py-2.5 text-center font-semibold text-green-600">{p.presentDays || 0}</td>
                     <td className="px-3 py-2.5 text-center text-slate-600">{p.totalWorkingDays || 0}</td>
                     <td className="px-3 py-2.5 text-right text-slate-700">{formatCurrency(p.basicSalary)}</td>
-                    <td className="px-3 py-2.5 text-right text-purple-600">{formatCurrency(p.increment)}</td>
+                    <td className="px-3 py-2.5 text-right text-purple-600" title={p.dynamicAllowanceTotal > 0 ? `Increment: ${formatCurrency(p.increment)} + Dynamic: ${formatCurrency(p.dynamicAllowanceTotal)}` : ''}>
+                      {formatCurrency((p.increment || 0) + (p.dynamicAllowanceTotal || 0))}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-indigo-600">{p.overtimeDays || 0}</td>
                     <td className="px-3 py-2.5 text-right text-indigo-600">{p.overtimeHours ? parseFloat(p.overtimeHours).toFixed(1) : '0'}</td>
                     <td className="px-3 py-2.5 text-center text-green-600">{p.paidLeaveDays || 0}</td>
@@ -1334,6 +1499,27 @@ function PayrollGen() {
                   </div>
                 )}
               </section>
+
+              {/* 2b. Dynamic Allowances (attendance-based, e.g. Fare Small: 29 × ₹25 = ₹725) */}
+              {payrollDetails.dynamicAllowances && payrollDetails.dynamicAllowances.length > 0 && (
+                <section className="bg-amber-50/80 rounded-xl p-4 border border-amber-100">
+                  <h4 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-3">Dynamic Allowances</h4>
+                  <p className="text-xs text-slate-600 mb-2">Attendance-based allowances (e.g. fare per present day)</p>
+                  <div className="space-y-2">
+                    {payrollDetails.dynamicAllowances.map((a, i) => (
+                      <div key={i} className="flex justify-between items-center bg-white/80 p-3 rounded-lg border border-amber-200">
+                        <span className="font-medium text-slate-700">{a.allowanceTypeName}</span>
+                        <span className="text-sm text-slate-600">{a.daysUsed} × {formatCurrency(a.rate)} = </span>
+                        <span className="font-bold text-amber-700">{formatCurrency(a.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-amber-200 flex justify-between font-bold">
+                    <span>Total Dynamic Allowances</span>
+                    <span className="text-amber-700">{formatCurrency(payrollDetails.earnings?.dynamicAllowanceTotal)}</span>
+                  </div>
+                </section>
+              )}
 
               {/* 3. Loan - Active, EMI Deducted */}
               {(payrollDetails.loanInfo?.activeLoansCount > 0 || payrollDetails.advanceAndDue?.loanEmiInAdvance > 0) && (

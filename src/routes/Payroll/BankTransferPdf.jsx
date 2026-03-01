@@ -10,6 +10,7 @@ const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const ACCOUNT_MAX = 20;
 const BRANCH_MAX = 50;
+const BANK_NAME_MAX = 50;
 
 function validateBankRow(row) {
   const err = {};
@@ -21,6 +22,8 @@ function validateBankRow(row) {
   if (acc.length > ACCOUNT_MAX) err.accountNumber = `Max ${ACCOUNT_MAX} characters`;
   const br = (row.branch || "").trim();
   if (br.length > BRANCH_MAX) err.branch = `Max ${BRANCH_MAX} characters`;
+  const bn = (row.bankName || "").trim();
+  if (bn.length > BANK_NAME_MAX) err.bankName = `Max ${BANK_NAME_MAX} characters`;
   return Object.keys(err).length ? err : null;
 }
 
@@ -33,8 +36,9 @@ function BankTransferPdf() {
   const [message, setMessage] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [amountType, setAmountType] = useState("NET"); // "NET" | "GROSS"
-  const [rows, setRows] = useState([]); // flattened list for table; accountNumber, ifsc, branch editable
-  const [fieldErrors, setFieldErrors] = useState({}); // { rowIndex: { ifsc?, accountNumber?, branch? } }
+  const [rows, setRows] = useState([]); // flattened list: bankName, accountNumber, ifsc, branch editable
+  const [fieldErrors, setFieldErrors] = useState({}); // { rowIndex: { ifsc?, accountNumber?, branch?, bankName? } }
+  const [ifscLookupLoading, setIfscLookupLoading] = useState(null); // row index when looking up IFSC
 
   const loadList = async () => {
     try {
@@ -48,6 +52,7 @@ function BankTransferPdf() {
         id: e.id,
         empCode: e.empCode || e.empId,
         empName: e.empName || e.empId,
+        bankName: e.bankName ?? "",
         accountNumber: e.accountNumber ?? "",
         ifsc: e.ifsc ?? "",
         branch: e.branch ?? "",
@@ -102,6 +107,30 @@ function BankTransferPdf() {
     });
   };
 
+  const handleIfscBlur = async (index) => {
+    const ifsc = (rows[index]?.ifsc || "").trim().toUpperCase();
+    if (ifsc.length !== 11 || !IFSC_REGEX.test(ifsc)) return;
+    setIfscLookupLoading(index);
+    try {
+      const res = await employeeApi.ifscLookup(ifsc);
+      if (res && (res.bankName || res.branch)) {
+        setRows((prev) => {
+          const next = [...prev];
+          next[index] = {
+            ...next[index],
+            ...(res.bankName != null && res.bankName !== "" ? { bankName: res.bankName } : {}),
+            ...(res.branch != null && res.branch !== "" ? { branch: res.branch } : {}),
+          };
+          return next;
+        });
+      }
+    } catch (_) {
+      // Leave fields as-is on lookup failure
+    } finally {
+      setIfscLookupLoading(null);
+    }
+  };
+
   const saveBankDetails = async () => {
     setMessage(null);
     const errors = {};
@@ -122,6 +151,7 @@ function BankTransferPdf() {
         const row = rows[i];
         try {
           await employeeApi.updateBankDetails(row.empCode, {
+            bankName: row.bankName || null,
             accountNumber: row.accountNumber || null,
             ifsc: row.ifsc || null,
             branch: row.branch || null,
@@ -292,6 +322,7 @@ function BankTransferPdf() {
                   <th className="text-left p-2 w-10"></th>
                   <th className="text-left p-2 font-medium text-slate-700">Emp Name</th>
                   <th className="text-left p-2 font-medium text-slate-700">Emp ID</th>
+                  <th className="text-left p-2 font-medium text-slate-700">Bank Name</th>
                   <th className="text-left p-2 font-medium text-slate-700">Account Number</th>
                   <th className="text-left p-2 font-medium text-slate-700">IFSC Code</th>
                   <th className="text-left p-2 font-medium text-slate-700">Branch</th>
@@ -315,6 +346,21 @@ function BankTransferPdf() {
                       <div>
                         <input
                           type="text"
+                          value={row.bankName ?? ""}
+                          onChange={(e) => updateRow(index, "bankName", e.target.value)}
+                          className={`w-full max-w-[160px] border rounded px-2 py-1 text-slate-800 ${fieldErrors[index]?.bankName ? "border-red-500" : "border-slate-300"}`}
+                          placeholder="Bank name"
+                          maxLength={BANK_NAME_MAX + 1}
+                        />
+                        {fieldErrors[index]?.bankName && (
+                          <div className="text-red-600 text-xs mt-0.5">{fieldErrors[index].bankName}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-2 align-top">
+                      <div>
+                        <input
+                          type="text"
                           value={row.accountNumber}
                           onChange={(e) => updateRow(index, "accountNumber", e.target.value)}
                           className={`w-full max-w-[140px] border rounded px-2 py-1 text-slate-800 ${fieldErrors[index]?.accountNumber ? "border-red-500" : "border-slate-300"}`}
@@ -332,10 +378,14 @@ function BankTransferPdf() {
                           type="text"
                           value={row.ifsc}
                           onChange={(e) => updateRow(index, "ifsc", e.target.value.toUpperCase())}
+                          onBlur={() => handleIfscBlur(index)}
                           className={`w-full max-w-[120px] border rounded px-2 py-1 text-slate-800 uppercase ${fieldErrors[index]?.ifsc ? "border-red-500" : "border-slate-300"}`}
                           placeholder="e.g. SBIN0001234"
                           maxLength={11}
                         />
+                        {ifscLookupLoading === index && (
+                          <div className="text-slate-500 text-xs mt-0.5">Looking up…</div>
+                        )}
                         {fieldErrors[index]?.ifsc && (
                           <div className="text-red-600 text-xs mt-0.5">{fieldErrors[index].ifsc}</div>
                         )}

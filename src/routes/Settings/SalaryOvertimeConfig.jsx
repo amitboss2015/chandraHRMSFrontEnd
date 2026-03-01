@@ -54,15 +54,9 @@ function SalaryOvertimeConfig() {
     regularOvertimeMultiplier: 1.0,
     weekendOvertimeMultiplier: 1.5,
     holidayOvertimeMultiplier: 2.0,
-    maxOvertimeHoursPerDay: 4,
-    maxOvertimeHoursPerMonth: 50,
     overtimeCalculationType: "HOURLY",
     
-    // Late/Attendance Rules
-    lateArrivalsPerAbsent: 3,
-    deductForLateArrival: true,
-    lateArrivalGraceMins: 0,
-    halfDayMinHours: 4,
+    // Attendance Rules (only full day min hours - late/half day rules removed)
     fullDayMinHours: 7,
     
     // Statutory Deduction Rates (Organization-Level)
@@ -385,48 +379,6 @@ function SalaryOvertimeConfig() {
               </div>
             </div>
 
-            {/* Max OT Per Day */}
-            <div className="p-4 bg-slate-50 rounded-xl">
-              <label className="block font-medium text-slate-700 mb-2">
-                Max OT Hours Per Day
-              </label>
-              <p className="text-sm text-slate-500 mb-3">
-                Cap on daily overtime (excess not counted)
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={config.maxOvertimeHoursPerDay}
-                  onChange={(e) => handleChange("maxOvertimeHoursPerDay", parseInt(e.target.value) || 4)}
-                  disabled={!config.overtimeEnabled}
-                  className="w-24 px-3 py-2 border rounded-lg disabled:bg-slate-100"
-                  min="1" max="12"
-                />
-                <span className="text-sm text-slate-500">hours</span>
-              </div>
-            </div>
-
-            {/* Max OT Per Month */}
-            <div className="p-4 bg-slate-50 rounded-xl">
-              <label className="block font-medium text-slate-700 mb-2">
-                Max OT Hours Per Month
-              </label>
-              <p className="text-sm text-slate-500 mb-3">
-                Cap on monthly overtime
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={config.maxOvertimeHoursPerMonth}
-                  onChange={(e) => handleChange("maxOvertimeHoursPerMonth", parseInt(e.target.value) || 50)}
-                  disabled={!config.overtimeEnabled}
-                  className="w-24 px-3 py-2 border rounded-lg disabled:bg-slate-100"
-                  min="1" max="200"
-                />
-                <span className="text-sm text-slate-500">hours</span>
-              </div>
-            </div>
-
             {/* Calculation Type */}
             <div className="p-4 bg-blue-50 rounded-xl md:col-span-2 lg:col-span-1">
               <label className="block font-medium text-blue-700 mb-2">
@@ -448,89 +400,13 @@ function SalaryOvertimeConfig() {
           </div>
         </div>
 
-        {/* Late Arrival & Attendance Rules */}
+        {/* Attendance Rules */}
         <div className="bg-white rounded-2xl shadow-sm border p-6">
           <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <span className="text-2xl">⏰</span> Late Arrival & Attendance Rules
+            <span className="text-2xl">⏰</span> Attendance Rules
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Late Arrivals Per Absent */}
-            <div className="p-4 bg-red-50 rounded-xl border border-red-200">
-              <div className="flex items-center gap-2 mb-3">
-                <input
-                  type="checkbox"
-                  id="deductForLate"
-                  checked={config.deductForLateArrival}
-                  onChange={(e) => handleChange("deductForLateArrival", e.target.checked)}
-                  className="w-4 h-4 text-red-600 rounded"
-                />
-                <label htmlFor="deductForLate" className="font-medium text-red-700">
-                  Deduct for Late Arrivals
-                </label>
-              </div>
-              <p className="text-sm text-red-600 mb-3">
-                How many late arrivals count as one absent
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={config.lateArrivalsPerAbsent}
-                  onChange={(e) => handleChange("lateArrivalsPerAbsent", parseInt(e.target.value) || 3)}
-                  disabled={!config.deductForLateArrival}
-                  className="w-20 px-3 py-2 border rounded-lg disabled:bg-slate-100"
-                  min="1" max="10"
-                />
-                <span className="text-sm text-red-600">lates = 1 absent</span>
-              </div>
-              <p className="text-xs text-red-500 mt-2">
-                Example: If 3, then 3 late marks = 1 day salary deduction
-              </p>
-            </div>
-
-            {/* Late Grace Period */}
-            <div className="p-4 bg-slate-50 rounded-xl">
-              <label className="block font-medium text-slate-700 mb-2">
-                Additional Late Grace Period
-              </label>
-              <p className="text-sm text-slate-500 mb-3">
-                Extra grace minutes (on top of shift's grace)
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={config.lateArrivalGraceMins}
-                  onChange={(e) => handleChange("lateArrivalGraceMins", parseInt(e.target.value) || 0)}
-                  className="w-20 px-3 py-2 border rounded-lg"
-                  min="0" max="60"
-                />
-                <span className="text-sm text-slate-500">minutes</span>
-              </div>
-            </div>
-
-            {/* Half Day Minimum */}
-            <div className="p-4 bg-yellow-50 rounded-xl">
-              <label className="block font-medium text-yellow-700 mb-2">
-                Half Day Minimum Hours
-              </label>
-              <p className="text-sm text-yellow-600 mb-3">
-                Minimum hours to count as half day
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={config.halfDayMinHours}
-                  onChange={(e) => handleChange("halfDayMinHours", parseInt(e.target.value) || 4)}
-                  className="w-20 px-3 py-2 border rounded-lg"
-                  min="1" max="6"
-                />
-                <span className="text-sm text-yellow-600">hours</span>
-              </div>
-              <p className="text-xs text-yellow-600 mt-2">
-                Working &lt; {config.halfDayMinHours}h = Absent, ≥ {config.halfDayMinHours}h = Half Day
-              </p>
-            </div>
-
             {/* Full Day Minimum */}
             <div className="p-4 bg-emerald-50 rounded-xl">
               <label className="block font-medium text-emerald-700 mb-2">
@@ -550,7 +426,7 @@ function SalaryOvertimeConfig() {
                 <span className="text-sm text-emerald-600">hours</span>
               </div>
               <p className="text-xs text-emerald-600 mt-2">
-                Working ≥ {config.fullDayMinHours}h = Full Day Present
+                Working ≥ {config.fullDayMinHours}h = Full Day Present, &lt; {config.fullDayMinHours}h = Absent (no half day)
               </p>
             </div>
           </div>
@@ -828,8 +704,8 @@ function SalaryOvertimeConfig() {
               <div className="font-bold">{config.holidayOvertimeMultiplier}× pay</div>
             </div>
             <div className="bg-white/20 p-2 rounded-lg">
-              <div className="text-white/80">Lates = 1 Absent</div>
-              <div className="font-bold">{config.lateArrivalsPerAbsent} times</div>
+              <div className="text-white/80">Full Day Min</div>
+              <div className="font-bold">{config.fullDayMinHours}h</div>
             </div>
             <div className="bg-white/20 p-2 rounded-lg">
               <div className="text-white/80">ESI Employee</div>

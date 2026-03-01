@@ -4,14 +4,12 @@ import React, { useMemo, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { API_BASE } from "../../utils/apiConfig";
+import { allowanceApi, getTenantId } from "../../services/api";
 
 const getToken = () =>
   sessionStorage.getItem("hrms_access_token") || localStorage.getItem("token") ||
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_TOKEN) ||
   "";
-
-const getTenantId = () =>
-  localStorage.getItem("hrms_tenant_id") || "SASA001";
 
 export default function EmployeeProfile() {
   const { empCode } = useParams();
@@ -35,8 +33,9 @@ export default function EmployeeProfile() {
     })
       .then((res) => res.json())
       .then((data) => {
-        // Convert to snake_case for consistency
+        // Convert to snake_case for consistency (include id for allowance API)
         setEmp({
+          id: data.id,
           emp_code: data.empCode ?? "",
           first_name: data.firstName ?? "",
           last_name: data.lastName ?? "",
@@ -370,9 +369,158 @@ export default function EmployeeProfile() {
               </div>
             </InfoCard>
           )}
+
+          {/* Dynamic Allowances (attendance-based, e.g. fare per day) */}
+          {emp.id && (
+            <EmployeeAllowancesSection employeeId={emp.id} />
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+// Dynamic Allowances section - assign allowance types to employee
+function EmployeeAllowancesSection({ employeeId }) {
+  const [assigned, setAssigned] = useState([]);
+  const [types, setTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [selectedTypeId, setSelectedTypeId] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [empAllows, allTypes] = await Promise.all([
+        allowanceApi.listEmployeeAllowances(employeeId),
+        allowanceApi.listAllTypes(getTenantId()),
+      ]);
+      setAssigned(Array.isArray(empAllows) ? empAllows : []);
+      setTypes(Array.isArray(allTypes) ? allTypes : []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [employeeId]);
+
+  const assign = async () => {
+    if (!selectedTypeId) return;
+    try {
+      await allowanceApi.assignToEmployee({
+        tenantId: getTenantId(),
+        employeeId,
+        allowanceTypeId: Number(selectedTypeId),
+      });
+      setSelectedTypeId("");
+      setAdding(false);
+      await load();
+    } catch (e) {
+      alert(e.message || "Failed to assign");
+    }
+  };
+
+  const remove = async (allowanceTypeId) => {
+    if (!confirm("Remove this allowance from employee?")) return;
+    try {
+      await allowanceApi.removeFromEmployee(employeeId, allowanceTypeId);
+      await load();
+    } catch (e) {
+      alert(e.message || "Failed to remove");
+    }
+  };
+
+  const assignedTypeIds = assigned.map((a) => a.allowanceTypeId);
+  const availableTypes = types.filter((t) => t.active && !assignedTypeIds.includes(t.id));
+
+  const formatCurrency = (amount) =>
+    amount != null
+      ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount)
+      : "₹0";
+
+  return (
+    <InfoCard title="Dynamic Allowances" icon="🚌" fullWidth>
+      <p className="text-xs text-slate-500 mb-3">
+        Attendance-based allowances (e.g. fare per present day). Create types in Settings → Allowance Types.
+      </p>
+      {loading ? (
+        <div className="text-sm text-slate-500">Loading…</div>
+      ) : (
+        <>
+          <div className="space-y-2 mb-4">
+            {assigned.length === 0 ? (
+              <div className="text-sm text-slate-500 py-2">No allowances assigned</div>
+            ) : (
+              assigned.map((a) => {
+                const type = types.find((t) => t.id === a.allowanceTypeId) || {};
+                return (
+                  <div
+                    key={a.id}
+                    className="flex justify-between items-center py-2 px-3 bg-amber-50 rounded-lg border border-amber-100"
+                  >
+                    <div>
+                      <span className="font-medium text-slate-700">{type.name || `Type #${a.allowanceTypeId}`}</span>
+                      <span className="text-slate-500 text-sm ml-2">
+                        ({type.calculationBasis || "PER_DAY"} @ {formatCurrency(type.amount)})
+                      </span>
+                    </div>
+                    <button
+                      className="text-red-600 hover:text-red-700 text-sm px-2 py-1"
+                      onClick={() => remove(a.allowanceTypeId)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {adding ? (
+            <div className="flex gap-2 items-center">
+              <select
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm flex-1"
+                value={selectedTypeId}
+                onChange={(e) => setSelectedTypeId(e.target.value)}
+              >
+                <option value="">Select allowance type…</option>
+                {availableTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({formatCurrency(t.amount)}/{t.calculationBasis === "PER_DAY" ? "day" : "month"})
+                  </option>
+                ))}
+              </select>
+              <button
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
+                onClick={assign}
+                disabled={!selectedTypeId}
+              >
+                Assign
+              </button>
+              <button
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 text-sm"
+                onClick={() => { setAdding(false); setSelectedTypeId(""); }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              onClick={() => setAdding(true)}
+              disabled={availableTypes.length === 0}
+            >
+              + Add allowance
+              {availableTypes.length === 0 && types.length > 0 && " (all assigned)"}
+              {types.length === 0 && " (create types in Settings first)"}
+            </button>
+          )}
+        </>
+      )}
+    </InfoCard>
   );
 }
 

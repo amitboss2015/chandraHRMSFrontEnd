@@ -62,6 +62,8 @@ const regularMenuItems = [
       { path: "/holidays", label: "Holidays", tooltip: "Define company holidays calendar | कंपनी छुट्टियों का कैलेंडर निर्धारित करें" },
       { path: "/settings/salary-overtime", label: "Salary & OT Rules", tooltip: "Set overtime rates, late deductions, etc. | ओवरटाइम दर, लेट कटौती आदि सेट करें" },
       { path: "/settings/devices", label: "Biometric Devices", tooltip: "Manage fingerprint/face recognition devices | फिंगरप्रिंट/फेस रिकग्निशन डिवाइस प्रबंधित करें" },
+      { path: "/settings/allowance-types", label: "Allowance Types", tooltip: "Create attendance-based allowances (e.g. fare per day) | उपस्थिति आधारित भत्ते बनाएं" },
+      { path: "/settings/manage-allowances", label: "Manage Allowances", tooltip: "Bulk assign allowances to employees | कर्मचारियों को भत्ते बल्क असाइन करें" },
       // { path: "/settings/data-management", label: "Data Management" },  // HIDDEN - Coming Soon
     ]
   },

@@ -285,6 +285,17 @@ function Payslip() {
                     )
                   ))}
                 </div>
+                {payslip.dynamicAllowances && payslip.dynamicAllowances.length > 0 && (
+                  <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-100">
+                    <p className="text-xs font-semibold text-amber-800 mb-1">Dynamic Allowance Breakdown</p>
+                    {payslip.dynamicAllowances.map((a, i) => (
+                      <div key={i} className="flex justify-between text-xs py-0.5">
+                        <span className="text-gray-600">{a.allowanceTypeName}: {a.daysUsed} × {formatCurrency(a.rate)}</span>
+                        <span className="font-medium">{formatCurrency(a.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-between py-3 mt-2 bg-green-100 px-2 rounded font-bold">
                   <span>Gross Salary</span>
                   <span className="text-green-700">{formatCurrency(payslip.grossSalary)}</span>

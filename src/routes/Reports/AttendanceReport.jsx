@@ -145,7 +145,6 @@ function AttendanceReport() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Present</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Absent</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Half Day</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Leave</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Work Hours</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">OT Hours</th>
@@ -173,7 +172,6 @@ function AttendanceReport() {
                       <td className="px-4 py-3 text-sm text-gray-500">{row.department || '-'}</td>
                       <td className="px-4 py-3 text-sm text-center text-green-600 font-medium">{row.present}</td>
                       <td className="px-4 py-3 text-sm text-center text-red-600 font-medium">{row.absent}</td>
-                      <td className="px-4 py-3 text-sm text-center text-yellow-600">{row.halfDay}</td>
                       <td className="px-4 py-3 text-sm text-center text-blue-600">{row.leave}</td>
                       <td className="px-4 py-3 text-sm text-right">{row.totalWorkHours}</td>
                       <td className="px-4 py-3 text-sm text-right text-purple-600">{row.overtimeHours}</td>

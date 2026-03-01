@@ -234,6 +234,8 @@ export const employeeApi = {
   update: (id, data) => fetchApi(`${API_BASE}/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateBankDetails: (empCode, data) =>
     fetchApi(`${API_BASE}/employees/${encodeURIComponent(empCode)}/bank-details`, { method: 'PATCH', body: JSON.stringify(data) }),
+  /** IFSC lookup: returns { bankName, branch } for auto-fill. */
+  ifscLookup: (ifsc) => fetchApi(`${API_BASE}/ifsc-lookup?ifsc=${encodeURIComponent(String(ifsc || '').trim())}`),
   /** Bulk update OT allowed (for attendance admin). Body: { empCodes: string[], otAllowed: boolean } */
   bulkUpdateOtAllowed: (empCodes, otAllowed) =>
     fetchApi(`${API_BASE}/employees/ot-allowed`, { method: 'PATCH', body: JSON.stringify({ empCodes, otAllowed }) }),
@@ -451,8 +453,10 @@ export const payrollApi = {
   // Delete
   delete: (id) => fetchApi(`${API_BASE}/payroll/${id}`, { method: 'DELETE' }),
   
-  deleteMonthly: (year, month, orgId = DEFAULT_ORG_ID) => 
-    fetchApi(`${API_BASE}/payroll?orgId=${orgId}&year=${year}&month=${month}`, { method: 'DELETE' }),
+  deleteMonthly: (year, month, orgId = DEFAULT_ORG_ID, deviceCode = null) => {
+    const deviceParam = deviceCode ? `&deviceCode=${encodeURIComponent(deviceCode)}` : '';
+    return fetchApi(`${API_BASE}/payroll/month?orgId=${orgId}&year=${year}&month=${month}${deviceParam}`, { method: 'DELETE' });
+  },
   
   // Export
   exportExcel: async (year, month, orgId = DEFAULT_ORG_ID) => {
@@ -478,6 +482,32 @@ export const payrollApi = {
     
     return await response.blob();
   },
+};
+
+// =========== ALLOWANCES (Dynamic allowance types & employee assignment) ===========
+export const allowanceApi = {
+  listTypes: (orgId = DEFAULT_ORG_ID) => 
+    fetchApi(`${API_BASE}/allowances/types?orgId=${orgId}`),
+  listAllTypes: (orgId = DEFAULT_ORG_ID) => 
+    fetchApi(`${API_BASE}/allowances/types/all?orgId=${orgId}`),
+  getAssignedEmployeeIds: (allowanceTypeId) =>
+    fetchApi(`${API_BASE}/allowances/types/${allowanceTypeId}/assigned-employee-ids`),
+  createType: (data) => 
+    fetchApi(`${API_BASE}/allowances/types`, { method: 'POST', body: JSON.stringify(data) }),
+  updateType: (id, data) => 
+    fetchApi(`${API_BASE}/allowances/types/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteType: (id) => 
+    fetchApi(`${API_BASE}/allowances/types/${id}`, { method: 'DELETE' }),
+  listEmployeeAllowances: (employeeId) => 
+    fetchApi(`${API_BASE}/allowances/employees/${employeeId}`),
+  assignToEmployee: (data) => 
+    fetchApi(`${API_BASE}/allowances/employees`, { method: 'POST', body: JSON.stringify(data) }),
+  removeFromEmployee: (employeeId, allowanceTypeId) => 
+    fetchApi(`${API_BASE}/allowances/employees/${employeeId}/allowance/${allowanceTypeId}`, { method: 'DELETE' }),
+  bulkAssign: (allowanceTypeId, employeeIds) =>
+    fetchApi(`${API_BASE}/allowances/bulk-assign`, { method: 'POST', body: JSON.stringify({ allowanceTypeId, employeeIds }) }),
+  bulkRemove: (allowanceTypeId, employeeIds) =>
+    fetchApi(`${API_BASE}/allowances/bulk-remove`, { method: 'POST', body: JSON.stringify({ allowanceTypeId, employeeIds }) }),
 };
 
 // =========== HOLIDAYS ===========
@@ -574,6 +604,25 @@ export const attendanceApi = {
   /** Returns dashboard data; totalIssues > 0 means unfixed missing punches for the month. Use cacheBust=true to force fresh data after fix. */
   getMissingPunchDashboard: (month, year, cacheBust = false) =>
     fetchApi(`${API_BASE}/attendance/missing-punch-dashboard?month=${month}&year=${year}${cacheBust ? `&_t=${Date.now()}` : ''}`),
+
+  /** Download missing-punch fix template (Excel) for the selected month/year. Returns blob. */
+  downloadMissingPunchTemplate: async (month, year) => {
+    const tenantId = getCurrentTenantId();
+    const token = getAccessToken();
+    const r = await fetch(`${API_BASE}/attendance/missing-punch/template/download?month=${month}&year=${year}`, {
+      headers: { 'X-Tenant-Id': tenantId, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+    });
+    if (!r.ok) throw new Error(await r.text() || 'Download failed');
+    return r.blob();
+  },
+
+  /** Import Excel to fix all missing punches at once. File must match the downloaded template. */
+  importMissingPunchExcel: (file, month, year) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchFormData(`${API_BASE}/attendance/missing-punch/import?month=${month}&year=${year}`, formData);
+  },
 };
 
 // =========== TENANT MANAGEMENT ===========

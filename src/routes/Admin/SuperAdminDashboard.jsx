@@ -23,8 +23,13 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
     'maintenance': 'maintenance',
     'highrisk': 'highrisk',
     'duplicates': 'duplicates',
-    'custom-formats': 'custom-formats'
+    'custom-formats': 'custom-formats',
+    'developer': 'developer'
   };
+  const [loggerName, setLoggerName] = useState('com.example.hrms');
+  const [logLevelLoading, setLogLevelLoading] = useState(false);
+  const [appLoggerLevel, setAppLoggerLevel] = useState(null);
+  const [logLevelSelect, setLogLevelSelect] = useState('INFO');
   const [activeTab, setActiveTab] = useState(tabMapping[tab] || 'overview');
   const [statusFilter, setStatusFilter] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
@@ -111,8 +116,28 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
       loadCompanyData();
     } else if (activeTab === 'custom-formats') {
       loadCustomFormats();
+    } else if (activeTab === 'developer') {
+      const loadLoggerLevel = async () => {
+        const name = (loggerName || '').trim() || 'com.example.hrms';
+        try {
+          const res = await fetch(`${API_BASE}/actuator/loggers/${encodeURIComponent(name)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const level = data.configuredLevel || data.effectiveLevel || 'INFO';
+            setAppLoggerLevel(level);
+            setLogLevelSelect(level);
+          } else {
+            setAppLoggerLevel(null);
+          }
+        } catch (_) {
+          setAppLoggerLevel(null);
+        }
+      };
+      loadLoggerLevel();
     }
-  }, [activeTab, loadCompanyData]);
+  }, [activeTab, loadCompanyData, token]);
 
   // Load custom format submissions
   const loadCustomFormats = useCallback(async () => {
@@ -495,6 +520,11 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
           className={activeTab === 'custom-formats' ? 'active' : ''} 
           onClick={() => setActiveTab('custom-formats')}>
           📎 Custom Formats ({customFormats.length})
+        </button>
+        <button 
+          className={activeTab === 'developer' ? 'active' : ''} 
+          onClick={() => setActiveTab('developer')}>
+          🔧 Developer
         </button>
       </div>
 
@@ -1074,6 +1104,109 @@ Submitted: ${submission.uploadedAt ? new Date(submission.uploadedAt).toLocaleStr
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'developer' && (
+          <div className="developer-section developer-section--dark">
+            <h3 className="developer-section__title">🔧 Debug logging</h3>
+            <p className="developer-section__desc">
+              Change application log level at runtime (no restart). When set to DEBUG, payroll and attendance calculation logs will appear in backend logs.
+            </p>
+            <div className="developer-section__row">
+              <label className="developer-section__label">Logger (package name):</label>
+              <input
+                type="text"
+                value={loggerName}
+                onChange={(e) => setLoggerName(e.target.value)}
+                placeholder="e.g. com.example.hrms or com.example.hrms.payroll"
+                className="developer-section__input"
+              />
+            </div>
+            <div className="developer-section__row">
+              <label className="developer-section__label">Level:</label>
+              <select
+                value={logLevelSelect}
+                onChange={(e) => setLogLevelSelect(e.target.value)}
+                className="developer-section__select"
+              >
+                <option value="TRACE">TRACE</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARN">WARN</option>
+                <option value="ERROR">ERROR</option>
+                <option value="OFF">OFF</option>
+              </select>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = (loggerName || '').trim() || 'com.example.hrms';
+                  setLogLevelLoading(true);
+                  try {
+                    const res = await fetch(`${API_BASE}/actuator/loggers/${encodeURIComponent(name)}`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ configuredLevel: logLevelSelect === 'OFF' ? 'OFF' : logLevelSelect }),
+                    });
+                    if (res.ok) {
+                      setAppLoggerLevel(logLevelSelect);
+                      alert(`Log level set to ${logLevelSelect} for ${name}. Backend will use it immediately (no restart).`);
+                    } else {
+                      const text = await res.text();
+                      alert('Failed to set log level: ' + (text || res.status));
+                    }
+                  } catch (err) {
+                    alert('Failed to set log level: ' + err.message);
+                  } finally {
+                    setLogLevelLoading(false);
+                  }
+                }}
+                disabled={logLevelLoading}
+                className="developer-section__btn developer-section__btn--primary"
+              >
+                {logLevelLoading ? 'Applying…' : 'Apply'}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = (loggerName || '').trim() || 'com.example.hrms';
+                  setLogLevelLoading(true);
+                  try {
+                    const res = await fetch(`${API_BASE}/actuator/loggers/${encodeURIComponent(name)}`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ configuredLevel: null }),
+                    });
+                    if (res.ok) {
+                      setAppLoggerLevel(null);
+                      setLogLevelSelect('INFO');
+                      alert('Log level reset to default for ' + name);
+                    } else {
+                      alert('Failed to reset: ' + res.status);
+                    }
+                  } catch (err) {
+                    alert('Failed to reset: ' + err.message);
+                  } finally {
+                    setLogLevelLoading(false);
+                  }
+                }}
+                disabled={logLevelLoading}
+                className="developer-section__btn developer-section__btn--secondary"
+              >
+                Reset to default
+              </button>
+            </div>
+            {appLoggerLevel != null && (
+              <p className="developer-section__current">
+                Current effective level: <strong>{appLoggerLevel}</strong>
+              </p>
             )}
           </div>
         )}
