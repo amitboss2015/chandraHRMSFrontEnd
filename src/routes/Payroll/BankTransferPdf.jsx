@@ -1,5 +1,5 @@
 // BankTransferPdf.jsx - Generate Bank Transfer PDF (Employee Bank Details Format)
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { usePeriodSelection } from "../../utils/monthYearState";
 import { payrollApi, employeeApi } from "../../services/api";
 
@@ -36,9 +36,29 @@ function BankTransferPdf() {
   const [message, setMessage] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [amountType, setAmountType] = useState("NET"); // "NET" | "GROSS"
+  const [banksOnSeparatePages, setBanksOnSeparatePages] = useState(new Set()); // bank names that get their own page in PDF; rest on one page
   const [rows, setRows] = useState([]); // flattened list: bankName, accountNumber, ifsc, branch editable
   const [fieldErrors, setFieldErrors] = useState({}); // { rowIndex: { ifsc?, accountNumber?, branch?, bankName? } }
   const [ifscLookupLoading, setIfscLookupLoading] = useState(null); // row index when looking up IFSC
+
+  // Distinct bank names from loaded rows (for checkboxes and PDF grouping)
+  const distinctBankNames = useMemo(() => {
+    const set = new Set();
+    rows.forEach((r) => {
+      const b = (r.bankName || "").trim();
+      set.add(b || "(Unspecified)");
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [rows]);
+
+  const toggleBankForSeparatePage = (bankName) => {
+    setBanksOnSeparatePages((prev) => {
+      const next = new Set(prev);
+      if (next.has(bankName)) next.delete(bankName);
+      else next.add(bankName);
+      return next;
+    });
+  };
 
   const loadList = async () => {
     try {
@@ -190,14 +210,14 @@ function BankTransferPdf() {
     try {
       setGenerating(true);
       setMessage(null);
-      const blob = await payrollApi.generateBankTransferPdf(selectedIds, amountType);
+      const blob = await payrollApi.generateBankTransferPdf(selectedIds, amountType, [...banksOnSeparatePages]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `Employee_Bank_Details_Format_${year}_${String(month).padStart(2, "0")}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      setMessage({ type: "success", text: `PDF downloaded for ${selectedIds.length} employee(s) (${amountType} salary).` });
+      setMessage({ type: "success", text: `PDF downloaded for ${selectedIds.length} employee(s) (${amountType} salary)${banksOnSeparatePages.size > 0 ? " — selected banks on separate pages, rest on one page." : "."}` });
     } catch (err) {
       console.error(err);
       setMessage({ type: "error", text: err.message || "Failed to generate PDF" });
@@ -259,6 +279,31 @@ function BankTransferPdf() {
 
       {rows.length > 0 && (
         <>
+          {/* Banks in this list: each with checkbox — checked = that bank on separate page; unchecked = on one "Remaining" page */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <h3 className="text-sm font-medium text-slate-700 mb-2">Banks in this list</h3>
+            <p className="text-sm text-slate-600 mb-2">
+              Tick the banks that should appear on a separate page in the PDF. All others will be on one page together.
+            </p>
+            {distinctBankNames.length === 0 ? (
+              <p className="text-sm text-slate-500">No bank names entered yet. Enter or save bank details below.</p>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {distinctBankNames.map((bankName) => (
+                  <label key={bankName} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={banksOnSeparatePages.has(bankName)}
+                      onChange={() => toggleBankForSeparatePage(bankName)}
+                      className="rounded border-slate-300 text-emerald-600"
+                    />
+                    <span className="text-sm text-slate-700">{bankName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-4">
             <div className="flex flex-wrap items-center gap-6">
               <div>

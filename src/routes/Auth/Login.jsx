@@ -14,6 +14,7 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [showMonthYearModal, setShowMonthYearModal] = useState(false);
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+  const [trialExpired, setTrialExpired] = useState(false);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -27,6 +28,7 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setTrialExpired(false);
     setLoading(true);
     
     try {
@@ -51,6 +53,7 @@ function Login() {
         }
       } else {
         setError(result.error || 'Invalid email or password');
+        setTrialExpired(result.code === 'TRIAL_EXPIRED');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -107,8 +110,21 @@ function Login() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-8 space-y-5">
-            {/* Error Message */}
-            {error && (
+            {/* Trial/License Expired Message */}
+            {trialExpired && error && (
+              <div className="bg-amber-500/15 border border-amber-500/40 text-amber-200 px-4 py-4 rounded-xl text-sm space-y-1">
+                <p className="font-medium flex items-center gap-2">
+                  <span>⏱️</span>
+                  Your free trial period has expired
+                </p>
+                <p className="text-amber-100/90">{error}</p>
+                <p className="text-amber-200/80 text-xs mt-2">
+                  For further use please contact admin or email support@chandrahr.in
+                </p>
+              </div>
+            )}
+            {/* Other Error Message */}
+            {error && !trialExpired && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
                 <span>⚠️</span>
                 {error}

@@ -390,15 +390,16 @@ export const payrollApi = {
   getBankTransferList: (year, month, orgId = DEFAULT_ORG_ID, deviceCode = null) =>
     fetchApi(`${API_BASE}/payroll/bank-transfer-list?orgId=${orgId}&year=${year}&month=${month}${deviceCode ? `&deviceCode=${encodeURIComponent(deviceCode)}` : ''}`),
 
-  generateBankTransferPdf: async (payrollIds, amountType = 'NET') => {
+  generateBankTransferPdf: async (payrollIds, amountType = 'NET', banksOnSeparatePages = []) => {
     const tenantId = getCurrentTenantId();
     const accessToken = getAccessToken();
     const headers = { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const list = Array.isArray(banksOnSeparatePages) ? banksOnSeparatePages : [];
     const response = await fetch(`${API_BASE}/payroll/bank-transfer-pdf`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ payrollIds, amountType: amountType.toUpperCase() }),
+      body: JSON.stringify({ payrollIds, amountType: amountType.toUpperCase(), banksOnSeparatePages: list }),
       credentials: 'include',
     });
     if (!response.ok) throw new Error(await response.text() || response.statusText);

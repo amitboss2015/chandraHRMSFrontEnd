@@ -235,9 +235,10 @@ export function AuthProvider({ children }) {
         setLoading(false);
         return { success: true };
       } else {
-        setError(data.message || 'Login failed');
+        const msg = data.message || data.error || 'Login failed';
+        setError(msg);
         setLoading(false);
-        return { success: false, error: data.message || 'Invalid credentials' };
+        return { success: false, error: msg, code: data.code };
       }
     } catch (err) {
       console.error('Login error:', err);
