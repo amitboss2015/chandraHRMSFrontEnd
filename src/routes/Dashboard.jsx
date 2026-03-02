@@ -1,8 +1,7 @@
 // Dashboard.jsx - Comprehensive dashboard with actionable insights
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { usePeriodSelection, getStoredPeriod } from '../utils/monthYearState';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import WorkflowHeader from '../components/WorkflowHeader';
 
 const getApiBase = () => {
@@ -176,7 +175,7 @@ function Dashboard() {
           <p className="text-slate-600">Failed to load dashboard data</p>
           <button 
             onClick={() => loadDashboardData(true, selectedMonth, selectedYear)}
-            className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            className="mt-4 min-h-[44px] px-5 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 active:bg-emerald-800"
           >
             Retry
           </button>
@@ -185,176 +184,146 @@ function Dashboard() {
     );
   }
 
+  const donutData = (() => {
+    const withData = stats.employeesWithData || 0;
+    const noData = Math.max(0, (stats.activeEmployees || 0) - withData);
+    const arr = [
+      { name: 'With data', value: withData },
+      { name: 'No data', value: noData },
+    ].filter((d) => d.value > 0);
+    return arr.length ? arr : [{ name: '—', value: 1 }];
+  })();
+  const donutColors = donutData.length === 1 ? ['#cbd5e1'] : ['#0284c7', '#cbd5e1']; // blue (with data), slate (no data)
+
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
-      {/* Workflow Header - Shows progress and workflow steps (single source of truth for month/year) */}
-      <WorkflowHeader />
+    <div className="min-h-screen bg-slate-50/80">
+      <div className="max-w-[1600px] mx-auto px-4 py-6 md:px-6 md:py-8">
+        {/* Page header */}
+        <header className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Dashboard</h1>
+            <p className="text-slate-500 text-sm">{currentDate}</p>
+          </div>
+        </header>
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 mt-1">{currentDate}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {fromCache && (
-            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Cached</span>
-          )}
-          <button 
-            onClick={() => loadDashboardData(true, selectedMonth, selectedYear)}
-            className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-            title="Refresh data"
-          >
-            🔄
-          </button>
-        </div>
-      </div>
+        {/* Workflow - primary CTA */}
+        <section className="mb-8">
+          <WorkflowHeader />
+        </section>
 
+        {/* Overview KPIs */}
+        <section className="mb-8" aria-label="Overview">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Overview</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-white rounded-xl border border-slate-200/80 p-4 flex flex-col items-center justify-center shadow-sm hover:border-slate-300/80 transition-colors min-h-[100px] md:min-h-[108px]">
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Attendance rate</p>
+              <div className="w-14 h-14 flex-shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={donutData}
+                      dataKey="value"
+                      innerRadius="60%"
+                      outerRadius="100%"
+                      paddingAngle={2}
+                      stroke="none"
+                    >
+                      {donutData.map((_, i) => (
+                        <Cell key={i} fill={donutColors[i]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v) => [v, '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-lg font-semibold text-slate-800 mt-2">{stats.hasAttendanceData ? (stats.attendanceRate || 0) : 0}%</p>
+            </div>
+            <StatCard title="Active Employees" value={stats.activeEmployees} subtitle={`${stats.totalEmployees} total`} icon="👥" color="blue" />
+            <StatCard title="Shifts Configured" value={stats.totalShifts} icon="🕐" color="purple" />
+            <StatCard title="Payroll Generated" value={stats.payrollGenerated ? 'Yes' : 'No'} subtitle={stats.payrollGenerated ? `${stats.payrollCount} employees` : (!stats.hasAttendanceData ? 'Upload attendance first' : 'Not yet')} icon="💰" color={stats.payrollGenerated ? 'green' : 'amber'} />
+            <StatCard title="Total Payout" value={stats.hasAttendanceData && stats.totalPayrollAmount ? formatCurrency(stats.totalPayrollAmount) : 'N/A'} subtitle={!stats.hasAttendanceData ? 'No attendance data' : (stats.payrollGenerated ? stats.monthName : 'Generate payroll')} icon="💵" color={stats.hasAttendanceData && stats.totalPayrollAmount ? 'emerald' : 'slate'} />
+          </div>
+        </section>
 
-      {/* Month Banner */}
-      <div className="mb-6 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-emerald-100 text-sm font-medium uppercase tracking-wide">Attendance Data For</p>
-            <h2 className="text-2xl md:text-3xl font-bold mt-1">
-              {stats.hasAttendanceData && stats.monthName ? stats.monthName : (stats.monthName || 'No Data Available')}
-            </h2>
-            <div className="flex items-center gap-4 mt-3 text-emerald-100 text-sm">
-              <span>👥 {stats.activeEmployees || 0} active employees</span>
-              <span>•</span>
-              <span>📊 {stats.employeesWithData || 0} with attendance</span>
+        {/* No Attendance Data Banner */}
+        {!stats.hasAttendanceData && (
+          <div className="mb-8 bg-amber-50 border border-amber-200/80 border-l-4 border-l-amber-500 rounded-xl p-4">
+            <div className="flex items-start gap-4">
+              <span className="text-2xl" aria-hidden>📤</span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-amber-800 mb-1">No attendance data uploaded</h3>
+                <p className="text-sm text-amber-700/90 mb-4">
+                  Upload attendance for {stats.monthName || `${selectedMonth}/${selectedYear}`} to view charts and generate payroll.
+                </p>
+                <a
+                  href="/attendance"
+                  className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Upload attendance →
+                </a>
+              </div>
             </div>
           </div>
-          <div className="hidden md:block text-right">
-            <div className="text-4xl font-bold">{stats.hasAttendanceData ? (stats.attendanceRate || 0) : 0}%</div>
-            <div className="text-emerald-100 text-sm">Attendance Rate</div>
-          </div>
-        </div>
-      </div>
+        )}
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          title="Active Employees"
-          value={stats.activeEmployees}
-          subtitle={`${stats.totalEmployees} total`}
-          icon="👥"
-          color="blue"
-        />
-        <StatCard
-          title="Shifts Configured"
-          value={stats.totalShifts}
-          icon="🕐"
-          color="purple"
-        />
-        <StatCard
-          title="Payroll Generated"
-          value={stats.payrollGenerated ? 'Yes' : 'No'}
-          subtitle={stats.payrollGenerated ? `${stats.payrollCount} employees` : (!stats.hasAttendanceData ? 'Upload attendance first' : 'Not yet')}
-          icon="💰"
-          color={stats.payrollGenerated ? 'green' : 'amber'}
-        />
-        <StatCard
-          title="Total Payout"
-          value={stats.hasAttendanceData && stats.totalPayrollAmount ? formatCurrency(stats.totalPayrollAmount) : 'N/A'}
-          subtitle={!stats.hasAttendanceData ? 'No attendance data' : (stats.payrollGenerated ? stats.monthName : 'Generate payroll')}
-          icon="💵"
-          color={stats.hasAttendanceData && stats.totalPayrollAmount ? 'emerald' : 'slate'}
-        />
-      </div>
-
-      {/* No Attendance Data Banner */}
-      {!stats.hasAttendanceData && (
-        <div className="mb-6 bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">📤</span>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-amber-800 mb-1">
-                No Attendance Data Uploaded
-              </h3>
-              <p className="text-sm text-amber-700 mb-3">
-                Attendance data has not been uploaded for {stats.monthName || `${selectedMonth}/${selectedYear}`}. 
-                Upload attendance data to see charts, reports, and generate payroll.
-              </p>
-              <a
-                href="/attendance"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                Upload Attendance Data →
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        
-        {/* Charts and Metrics */}
-        <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* Top 5 Best Attendance - Animated Chart */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              🏆 Top 5 Attendance
-            </h3>
+        {/* Main content: Attendance insights (left) | Payroll & Alerts (right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch">
+          {/* Left: Attendance insights */}
+          <div className="lg:col-span-2 space-y-6 flex flex-col">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Attendance insights</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Top 5 Best Attendance */}
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">Top 5 attendance</h3>
             {!stats.hasAttendanceData ? (
               <EmptyState 
                 icon="📤" 
-                message="No attendance data uploaded for this month. Upload attendance data to see top performers." 
+                message="Upload attendance to see top performers." 
               />
             ) : stats.topAttendance?.length > 0 ? (
-              <div className="h-64">
+              <div className="h-44 min-h-[176px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.topAttendance.map((emp, i) => ({
-                    name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
-                    rate: Math.max(emp.rate || 0, 0), // Ensure non-negative
-                    fullName: emp.name,
-                    empCode: emp.empCode,
-                    presentDays: emp.presentDays || 0
-                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis 
-                      dataKey="name" 
-                      angle={-45} 
-                      textAnchor="end" 
-                      height={80}
-                      tick={{ fontSize: 11 }}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 11 }}
-                      domain={[0, 'dataMax']}
-                    />
-                    <Tooltip 
+                  <PieChart>
+                    <Pie
+                      data={stats.topAttendance.map((emp, i) => ({
+                        name: emp.name?.split(' ')[0] || emp.empCode || `E${i + 1}`,
+                        value: Math.max(emp.rate ?? 0, 0) || 1,
+                        fullName: emp.name,
+                        empCode: emp.empCode,
+                        presentDays: emp.presentDays ?? 0,
+                      }))}
+                      dataKey="value"
+                      innerRadius="40%"
+                      outerRadius="85%"
+                      paddingAngle={2}
+                      stroke="white"
+                      strokeWidth={1}
+                    >
+                      {stats.topAttendance.map((_, i) => (
+                        <Cell
+                          key={i}
+                          fill={['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626'][i % 5]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
                       content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload;
+                        if (active && payload?.[0]?.payload) {
+                          const d = payload[0].payload;
                           return (
-                            <div className="bg-white p-3 border rounded-lg shadow-lg">
-                              <p className="font-semibold text-slate-800">{data.fullName}</p>
-                              <p className="text-xs text-slate-500">{data.empCode}</p>
-                              <p className="text-emerald-600 font-bold mt-1">{data.rate}% Attendance</p>
-                              <p className="text-xs text-slate-500">{data.presentDays} present days</p>
+                            <div className="bg-white p-3 border rounded-lg shadow-lg text-left">
+                              <p className="font-semibold text-slate-800">{d.fullName}</p>
+                              <p className="text-xs text-slate-500">{d.empCode}</p>
+                              <p className="text-emerald-600 font-bold mt-1">{d.value}% Attendance</p>
+                              <p className="text-xs text-slate-500">{d.presentDays} present days</p>
                             </div>
                           );
                         }
                         return null;
                       }}
                     />
-                    <Bar dataKey="rate" radius={[8, 8, 0, 0]} animationDuration={1500}>
-                      {stats.topAttendance.map((emp, i) => (
-                        <Cell 
-                          key={`cell-${i}`} 
-                          fill={
-                            i === 0 ? '#fbbf24' : 
-                            i === 1 ? '#94a3b8' : 
-                            i === 2 ? '#d97706' : 
-                            '#cbd5e1'
-                          } 
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
+                    <Legend layout="horizontal" align="center" wrapperStyle={{ fontSize: 10 }} />
+                  </PieChart>
                 </ResponsiveContainer>
               </div>
             ) : (
@@ -362,18 +331,16 @@ function Dashboard() {
             )}
           </div>
 
-          {/* Top 5 Late Employees - Animated Chart */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              ⏰ Most Late Arrivals
-            </h3>
+          {/* Most Late */}
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">Most late</h3>
             {!stats.hasAttendanceData ? (
               <EmptyState 
                 icon="📤" 
-                message="No attendance data uploaded. Upload attendance data to see late arrival statistics." 
+                message="Upload attendance for late stats." 
               />
             ) : stats.topLate?.length > 0 ? (
-              <div className="h-64">
+              <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.topLate.map((emp, i) => ({
                     name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
@@ -381,13 +348,13 @@ function Dashboard() {
                     minutes: emp.lateMinutes || 0,
                     fullName: emp.name,
                     empCode: emp.empCode
-                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                  }))} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis 
                       dataKey="name" 
                       angle={-45} 
                       textAnchor="end" 
-                      height={80}
+                      height={52}
                       tick={{ fontSize: 11 }}
                     />
                     <YAxis tick={{ fontSize: 11 }} />
@@ -416,31 +383,29 @@ function Dashboard() {
             )}
           </div>
 
-          {/* Top 5 Missing Punches - Animated Chart */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              🔴 Maximum Miss Punches
-            </h3>
+          {/* Miss Punches */}
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">Miss punches</h3>
             {!stats.hasAttendanceData ? (
               <EmptyState 
                 icon="📤" 
-                message="No attendance data uploaded. Upload attendance data to see missing punch statistics." 
+                message="Upload attendance for punch stats." 
               />
             ) : stats.topMissingPunch?.length > 0 ? (
-              <div className="h-64">
+              <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.topMissingPunch.map((emp, i) => ({
                     name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
                     count: emp.missingPunchCount || 0,
                     fullName: emp.name,
                     empCode: emp.empCode
-                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                  }))} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis 
                       dataKey="name" 
                       angle={-45} 
                       textAnchor="end" 
-                      height={80}
+                      height={52}
                       tick={{ fontSize: 11 }}
                     />
                     <YAxis tick={{ fontSize: 11 }} />
@@ -468,18 +433,16 @@ function Dashboard() {
             )}
           </div>
 
-          {/* Top 5 Early Exits - Animated Chart */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              🚪 Maximum Early Exits
-            </h3>
+          {/* Early Exits */}
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">Early exits</h3>
             {!stats.hasAttendanceData ? (
               <EmptyState 
                 icon="📤" 
-                message="No attendance data uploaded. Upload attendance data to see early exit statistics." 
+                message="Upload attendance for early exit stats." 
               />
             ) : stats.topEarlyExit?.length > 0 ? (
-              <div className="h-64">
+              <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.topEarlyExit.map((emp, i) => ({
                     name: emp.name?.split(' ')[0] || emp.empCode || `Emp ${i + 1}`,
@@ -487,13 +450,13 @@ function Dashboard() {
                     minutes: emp.earlyOutMinutes || 0,
                     fullName: emp.name,
                     empCode: emp.empCode
-                  }))} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+                  }))} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis 
                       dataKey="name" 
                       angle={-45} 
                       textAnchor="end" 
-                      height={80}
+                      height={52}
                       tick={{ fontSize: 11 }}
                     />
                     <YAxis tick={{ fontSize: 11 }} />
@@ -522,136 +485,49 @@ function Dashboard() {
             )}
           </div>
 
-          {/* Top 5 Highest Earners */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              💰 Top 5 Earners
-            </h3>
-            {!stats.hasAttendanceData ? (
-              <EmptyState 
-                icon="📤" 
-                message="No payroll data available. Upload attendance data and generate payroll to see top earners." 
-              />
-            ) : stats.topEarners?.length > 0 ? (
-              <div className="space-y-3">
-                {stats.topEarners.map((emp, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-green-50">
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-green-500 text-white' : 'bg-green-200 text-green-800'
-                      }`}>
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{emp.name}</p>
-                        <p className="text-xs text-slate-500">ID: {emp.empId}</p>
+            </div>
+          </div>
+
+        {/* Right: Payroll & alerts */}
+        <div className="flex flex-col space-y-6 min-h-0">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-shrink-0">Payroll & alerts</h2>
+          <div className="space-y-5 flex-1 min-h-0">
+            {/* Top 5 Earners */}
+            <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-800 mb-3">Top 5 earners</h3>
+              {!stats.hasAttendanceData ? (
+                <EmptyState icon="📤" message="Upload attendance and generate payroll to see top earners." />
+              ) : stats.topEarners?.length > 0 ? (
+                <div className="space-y-2">
+                  {stats.topEarners.map((emp, i) => (
+                    <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-slate-50/80 border border-slate-100">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${i === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{emp.name}</p>
+                          <p className="text-xs text-slate-500">ID: {emp.empId}</p>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-2">
+                        <p className="text-sm font-semibold text-emerald-600">{formatCurrency(emp.netSalary)}</p>
+                        <p className="text-xs text-slate-400">Net</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-green-600">{formatCurrency(emp.netSalary)}</p>
-                      <p className="text-xs text-slate-500">Net</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon="💵" message="No payroll data" />
-            )}
-          </div>
-
-          {/* Peak Absent Day */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              📅 Peak Absent Day
-            </h3>
-            {!stats.hasAttendanceData ? (
-              <EmptyState 
-                icon="📤" 
-                message="No attendance data uploaded. Upload attendance data to see peak absent day analysis." 
-              />
-            ) : stats.peakAbsentDay ? (
-              <div className="text-center py-4">
-                <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-3">
-                  <span className="text-3xl">📆</span>
+                  ))}
                 </div>
-                <p className="text-2xl font-bold text-red-600">{stats.peakAbsentDay.absentCount}</p>
-                <p className="text-slate-600 font-medium">{stats.peakAbsentDay.dayName}</p>
-                <p className="text-sm text-slate-500">{stats.peakAbsentDay.date}</p>
-                <p className="text-xs text-slate-400 mt-2">employees were absent</p>
-              </div>
-            ) : (
-              <EmptyState icon="✅" message="No absences recorded" positive />
-            )}
-          </div>
-        </div>
+              ) : (
+                <EmptyState icon="💵" message="No payroll data" />
+              )}
+            </div>
 
-        {/* Right Sidebar */}
-        <div className="space-y-6">
-          
-          {/* Holidays This Month */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              🎉 Holidays - {stats.monthName?.split(' ')[0]}
-            </h3>
-            {stats.holidays?.length > 0 ? (
-              <div className="space-y-2">
-                {stats.holidays.map((h, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-purple-50">
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{h.name}</p>
-                      <p className="text-xs text-slate-500">{new Date(h.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
-                    </div>
-                    <span className={`px-2 py-0.5 text-xs rounded-full ${h.isPaid ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {h.isPaid ? 'Paid' : 'Optional'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon="📅" message="No holidays this month" />
-            )}
-          </div>
-
-          {/* Device-wise Stats */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              📱 Device-wise Punches
-            </h3>
-            {stats.deviceStats?.length > 0 ? (
-              <div className="space-y-3">
-                {stats.deviceStats.map((d, i) => (
-                  <div key={i} className="p-3 rounded-lg bg-slate-50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-slate-700">{d.deviceCode}</span>
-                      <span className="text-xs text-slate-500">
-                        {d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString() : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-green-600">✓ {d.successRows} success</span>
-                      {d.errorRows > 0 && <span className="text-red-500">✗ {d.errorRows} errors</span>}
-                      <span className="text-slate-400">/ {d.totalRows} total</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon="📱" message="No device data" />
-            )}
-          </div>
-
-          {/* Multi-Device Employees (Suspicious Activity) */}
-          {stats.multiDeviceEmployees?.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border p-5 border-l-4 border-l-orange-400">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                ⚠️ Multi-Device Punches
-                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-                  Review Required
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 mb-3">
-                Employees punching at multiple biometric devices
-              </p>
+            {/* Multi-Device Employees (Suspicious Activity) */}
+            {stats.multiDeviceEmployees?.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200/80 border-l-4 border-l-amber-500 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-800 mb-1">Multi-device punches</h3>
+              <span className="text-xs text-amber-600 font-medium">Review required</span>
+              <p className="text-xs text-slate-500 mt-2 mb-3">Employees punching at multiple biometric devices</p>
               <div className="space-y-2">
                 {stats.multiDeviceEmployees.map((emp, i) => (
                   <div key={i} className="p-3 rounded-lg bg-orange-50">
@@ -674,17 +550,8 @@ function Dashboard() {
               </div>
             </div>
           )}
-
-          {/* Quick Actions */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">⚡ Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <QuickAction href="/attendance" icon="📊" label="Attendance" />
-              <QuickAction href="/payroll" icon="💰" label="Payroll" />
-              <QuickAction href="/employees" icon="👥" label="Employees" />
-              <QuickAction href="/reports" icon="📈" label="Reports" />
-            </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -713,14 +580,14 @@ function StatCard({ title, value, subtitle, icon, color }) {
   };
 
   return (
-    <div className="stat-card bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div>
+    <div className="stat-card bg-white rounded-xl border border-slate-200/80 shadow-sm p-4 hover:border-slate-300/80 transition-colors min-h-[100px] md:min-h-[108px] flex flex-col justify-center">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-xs text-slate-500 uppercase tracking-wide">{title}</p>
-          <p className="text-xl md:text-2xl font-bold text-slate-800 mt-1">{value}</p>
-          {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+          <p className="text-lg md:text-xl font-semibold text-slate-800 mt-1">{value}</p>
+          {subtitle && <p className="text-xs text-slate-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
-        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors[color]} flex items-center justify-center text-lg shadow-lg`}>
+        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${colors[color]} flex items-center justify-center text-base flex-shrink-0 shadow-sm`}>
           {icon}
         </div>
       </div>
@@ -730,22 +597,10 @@ function StatCard({ title, value, subtitle, icon, color }) {
 
 function EmptyState({ icon, message, positive }) {
   return (
-    <div className={`text-center py-8 ${positive ? 'text-emerald-600' : 'text-slate-500'}`}>
-      <span className="text-4xl mb-3 block">{icon}</span>
-      <p className="text-sm font-medium mt-2 leading-relaxed px-4">{message}</p>
+    <div className={`text-center py-4 ${positive ? 'text-emerald-600' : 'text-slate-500'}`}>
+      <span className="text-2xl mb-1 block">{icon}</span>
+      <p className="text-xs font-medium leading-snug px-2">{message}</p>
     </div>
-  );
-}
-
-function QuickAction({ href, icon, label }) {
-  return (
-    <Link
-      to={href}
-      className="flex flex-col items-center justify-center p-3 border rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all"
-    >
-      <span className="text-xl mb-1">{icon}</span>
-      <span className="text-xs text-slate-600">{label}</span>
-    </Link>
   );
 }
 

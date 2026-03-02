@@ -49,9 +49,10 @@ function Topbar({ onMenuClick }) {
           {/* Mobile menu button - show when sidebar is hidden (below md) */}
           <button 
             onClick={onMenuClick}
-            className="md:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors"
+            className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 active:bg-slate-200 transition-colors"
+            aria-label="Open menu"
           >
-            <span className="text-xl">☰</span>
+            <span className="text-xl" aria-hidden>☰</span>
           </button>
           
           {/* Page Title */}

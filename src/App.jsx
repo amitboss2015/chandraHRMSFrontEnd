@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import BottomNav from "./components/BottomNav";
 
 // Public Pages (SaaS Landing & Registration)
 import LandingPage from "./routes/Public/LandingPage";
@@ -65,9 +66,10 @@ function MainLayout({ children }) {
       {/* Main Content */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-20 md:pb-0">
           {children}
         </main>
+        <BottomNav onOpenMenu={() => setSidebarOpen(true)} />
       </div>
     </div>
   );

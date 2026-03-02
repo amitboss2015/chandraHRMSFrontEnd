@@ -103,20 +103,20 @@ function WorkflowHeader() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-        <div className="text-center text-slate-500">Loading workflow status...</div>
+      <div className="bg-white rounded-xl shadow-sm border p-3">
+        <div className="text-center text-slate-500 text-sm">Loading workflow...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border p-4 mb-6 border-red-200">
+      <div className="bg-white rounded-xl shadow-sm border p-3 border-red-200">
         <div className="text-red-600 text-sm">
           ⚠️ Error loading workflow: {error}
           <button 
             onClick={() => fetchWorkflowStatus(currentMonth, currentYear)} 
-            className="ml-2 text-orange-600 hover:text-orange-700 underline"
+            className="ml-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-3 text-orange-600 hover:text-orange-700 underline"
           >
             Retry
           </button>
@@ -144,77 +144,68 @@ function WorkflowHeader() {
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">📅</span>
+      <div className="bg-white rounded-xl shadow-sm border p-3 h-full flex flex-col min-h-[120px]">
+        {/* Header - compact */}
+        <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📅</span>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">
+              <h3 className="text-sm font-semibold text-slate-800">
                 {monthName} {workflowStatus.year}
               </h3>
-              <p className="text-xs text-slate-500">Workflow Progress</p>
+              <p className="text-xs text-slate-500">Workflow</p>
             </div>
           </div>
           <button 
             onClick={handleChangeMonthYear}
-            className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+            className="min-h-[44px] px-3 py-2 text-xs bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-md transition-colors"
           >
             Change
           </button>
         </div>
 
-        {/* Workflow Steps */}
-        <div className="mb-4">
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* Workflow Steps - compact chips */}
+        <div className="mb-2">
+          <div className="flex items-center gap-1 flex-wrap">
             {steps.map((step, index) => {
               const isCompleted = step.completed;
-              const isPending = step.status === 'pending';
               const isCurrent = !isCompleted && index > 0 && steps[index - 1]?.completed;
-              
               return (
                 <React.Fragment key={step.step}>
                   <div
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
+                    role="button"
+                    tabIndex={0}
+                    className={`flex items-center gap-1 min-h-[44px] px-2 py-2 rounded-md cursor-pointer transition-all touch-manipulation ${
                       isCompleted 
                         ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' 
                         : isCurrent
-                        ? 'bg-orange-50 border border-orange-200 text-orange-700 animate-pulse'
+                        ? 'bg-orange-50 border border-orange-200 text-orange-700'
                         : 'bg-slate-50 border border-slate-200 text-slate-500'
                     }`}
                     onClick={() => handleStepClick(step)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleStepClick(step); } }}
                     title={step.description}
                   >
-                    <span className="text-lg">{step.icon}</span>
-                    <span className="text-xs font-medium whitespace-nowrap">
-                      {step.name.split(' ')[0]}
-                    </span>
-                    {isCompleted && <span className="text-emerald-600">✓</span>}
-                    {step.warning && <span className="text-orange-600">!</span>}
+                    <span className="text-sm">{step.icon}</span>
+                    <span className="text-xs font-medium whitespace-nowrap">{step.name.split(' ')[0]}</span>
+                    {isCompleted && <span className="text-emerald-600 text-xs">✓</span>}
                   </div>
-                  
-                  {index < steps.length - 1 && (
-                    <span className={`text-slate-400 ${isCompleted ? 'text-emerald-500' : ''}`}>
-                      →
-                    </span>
-                  )}
+                  {index < steps.length - 1 && <span className="text-slate-300 text-xs">→</span>}
                 </React.Fragment>
               );
             })}
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-slate-600">
-              {workflowStatus.completedSteps || 0} / {workflowStatus.totalSteps || 7} Steps Completed
+        {/* Progress Bar - slim */}
+        <div className="mb-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-600">
+              {workflowStatus.completedSteps || 0}/{workflowStatus.totalSteps || 7} steps
             </span>
-            <span className="text-sm font-semibold text-slate-800">
-              {workflowStatus.progressPercentage || 0}%
-            </span>
+            <span className="text-xs font-semibold text-slate-800">{workflowStatus.progressPercentage || 0}%</span>
           </div>
-          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300"
               style={{ width: `${workflowStatus.progressPercentage || 0}%` }}
@@ -222,26 +213,17 @@ function WorkflowHeader() {
           </div>
         </div>
 
-        {/* Recommended Action */}
+        {/* Recommended Action - compact */}
         {workflowStatus.recommended && (
-          <div className={`p-3 rounded-lg border-l-4 ${
-            workflowStatus.recommended.priority === 'high' 
-              ? 'bg-red-50 border-red-400' 
-              : workflowStatus.recommended.priority === 'medium'
-              ? 'bg-orange-50 border-orange-400'
+          <div className={`p-2 rounded-md border-l-2 text-xs ${
+            workflowStatus.recommended.priority === 'high' ? 'bg-red-50 border-red-400' 
+              : workflowStatus.recommended.priority === 'medium' ? 'bg-orange-50 border-orange-400'
               : 'bg-emerald-50 border-emerald-400'
           }`}>
             <div className="flex items-center gap-2">
-              <span className="text-lg">
-                {workflowStatus.recommended.priority === 'high' ? '⚠️' : '💡'}
-              </span>
-              <span className="text-sm text-slate-700 flex-1">
-                {workflowStatus.recommended.message}
-              </span>
-              <a
-                href={workflowStatus.recommended.url}
-                className="px-3 py-1 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors font-medium"
-              >
+              <span>{workflowStatus.recommended.priority === 'high' ? '⚠️' : '💡'}</span>
+              <span className="text-slate-700 flex-1 truncate">{workflowStatus.recommended.message}</span>
+              <a href={workflowStatus.recommended.url} className="px-2 py-0.5 bg-orange-500 hover:bg-orange-600 text-white rounded font-medium flex-shrink-0">
                 Go →
               </a>
             </div>

@@ -102,50 +102,50 @@ function Sidebar({ isOpen, onClose }) {
         ></div>
       )}
       
-      {/* Sidebar - visible on md+ (768px), slide-in on smaller screens */}
+      {/* Sidebar - compact, slimmer */}
       <div className={`
         fixed md:static inset-y-0 left-0 z-50 flex-shrink-0
-        w-72 md:w-64 bg-gradient-to-b from-slate-800 to-slate-900 
+        w-60 md:w-52 bg-gradient-to-b from-slate-800 to-slate-900 
         text-white flex flex-col overflow-x-hidden
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        {/* Header */}
-        <div className="p-5 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-              <span className="text-xl font-bold text-white">C</span>
+        {/* Header - compact */}
+        <div className="p-3 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shadow">
+              <span className="text-base font-bold text-white">C</span>
             </div>
-            <div>
-              <h2 className="text-lg font-bold">ChandraHR</h2>
-              <p className="text-xs text-slate-400">Workforce Management</p>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold truncate">ChandraHR</h2>
+              <p className="text-xs text-slate-400">Workforce</p>
             </div>
           </div>
         </div>
 
-        {/* User Info */}
+        {/* User Info - compact */}
         {user && (
-          <div className="px-5 py-4 border-b border-white/5">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-emerald-500/20 rounded-full flex items-center justify-center">
-                <span className="text-lg">👤</span>
+          <div className="px-3 py-2 border-b border-white/5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-sm">👤</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user.name || 'Admin User'}</p>
-                <p className="text-xs text-slate-400">Administrator</p>
+                <p className="text-xs font-medium truncate">{user.name || 'Admin'}</p>
+                <p className="text-xs text-slate-400 truncate">Administrator</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-auto p-3">
-          <ul className="space-y-1">
+        {/* Navigation - tighter */}
+        <nav className="flex-1 overflow-auto p-2">
+          <ul className="space-y-0.5">
             {/* SUPER_ADMIN gets admin-only menu */}
             {user?.role === 'SUPER_ADMIN' ? (
               <>
-                <li className="pb-2 mb-2 border-b border-white/10">
-                  <p className="px-4 py-2 text-xs font-semibold text-purple-400 uppercase">Super Admin Console</p>
+                <li className="pb-1 mb-1 border-b border-white/10">
+                  <p className="px-3 py-1 text-xs font-semibold text-purple-400 uppercase">Super Admin</p>
                 </li>
                 {superAdminMenuItems.map((item) => (
                   <li key={item.path}>
@@ -153,15 +153,15 @@ function Sidebar({ isOpen, onClose }) {
                       to={item.path}
                       onClick={onClose}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                        `flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
                           isActive 
-                            ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-500/25' 
+                            ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow shadow-purple-500/20' 
                             : 'hover:bg-white/5 text-slate-300'
                         }`
                       }
                     >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className="text-base">{item.icon}</span>
+                      <span className="text-xs font-medium">{item.label}</span>
                     </NavLink>
                   </li>
                 ))}
@@ -175,14 +175,14 @@ function Sidebar({ isOpen, onClose }) {
                       <button
                         onClick={() => toggleMenu(item.label)}
                         title={item.tooltip}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-left transition-all
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all
                           ${isActiveParent(item.children) 
                             ? 'bg-emerald-500/20 text-emerald-400' 
                             : 'hover:bg-white/5 text-slate-300'
                           }`}
                       >
-                        <span className="text-lg flex-shrink-0">{item.icon}</span>
-                        <span className="flex-1 text-sm font-medium">{item.label}</span>
+                        <span className="text-base flex-shrink-0">{item.icon}</span>
+                        <span className="flex-1 text-xs font-medium">{item.label}</span>
                         <span className={`text-xs flex-shrink-0 transition-transform ${expandedMenus[item.label] || isActiveParent(item.children) ? 'rotate-90' : ''}`}>
                           ▶
                         </span>
@@ -194,7 +194,7 @@ function Sidebar({ isOpen, onClose }) {
                         </div>
                       )}
                       {(expandedMenus[item.label] || isActiveParent(item.children)) && (
-                        <ul className="mt-1 ml-6 pl-4 border-l border-white/10 space-y-1">
+                        <ul className="mt-0.5 ml-4 pl-3 border-l border-white/10 space-y-0.5">
                           {item.children.map(child => (
                             <li key={child.path} className="group/child relative">
                               <NavLink
@@ -203,7 +203,7 @@ function Sidebar({ isOpen, onClose }) {
                                 onClick={onClose}
                                 title={child.tooltip}
                                 className={({ isActive }) =>
-                                  `block px-3 py-2 rounded-lg text-sm transition-all ${
+                                  `block px-2 py-1.5 rounded-md text-xs transition-all ${
                                     isActive 
                                       ? 'bg-emerald-500 text-white font-medium' 
                                       : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -230,15 +230,15 @@ function Sidebar({ isOpen, onClose }) {
                         onClick={onClose}
                         title={item.tooltip}
                         className={({ isActive }) =>
-                          `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                          `flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
                             isActive 
-                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25' 
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow shadow-emerald-500/20' 
                               : 'hover:bg-white/5 text-slate-300'
                           }`
                         }
                       >
-                        <span className="text-lg flex-shrink-0">{item.icon}</span>
-                        <span className="text-sm font-medium ">{item.label}</span>
+                        <span className="text-base flex-shrink-0">{item.icon}</span>
+                        <span className="text-xs font-medium">{item.label}</span>
                       </NavLink>
                       {/* Tooltip on hover */}
                       {item.tooltip && (
@@ -254,16 +254,16 @@ function Sidebar({ isOpen, onClose }) {
           </ul>
         </nav>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-white/10">
+        {/* Footer - compact */}
+        <div className="p-2 border-t border-white/10">
           <button 
             onClick={() => {
               logout();
               onClose?.();
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all text-sm font-medium"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-all text-xs font-medium"
           >
-            <span>🚪</span>
+            <span className="text-sm">🚪</span>
             Logout
           </button>
         </div>
