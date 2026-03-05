@@ -234,16 +234,20 @@ function AttendanceSheet() {
   const [templateError, setTemplateError] = useState("");
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
-  // Load existing batches for the selected month/year
+  // Load existing batches for the selected month/year only (API returns batches for this period)
   const loadExistingBatches = async () => {
     setBatchesLoading(true);
     try {
-      const data = await fetchJson('/attendance/import/batches');
+      const hasValidPeriod = month >= 1 && month <= 12 && year >= 2000 && year <= 2100;
+      const path = hasValidPeriod
+        ? `/attendance/import/batches?month=${month}&year=${year}`
+        : '/attendance/import/batches';
+      const data = await fetchJson(path);
       const list = Array.isArray(data) ? data : [];
       setExistingBatches(list);
       // First batch for current month/year (for info message; multiple uploads allowed)
-      const batchForMonth = list.find(b => b.month === month && b.year === year);
-      setExistingBatchForMonth(batchForMonth || null);
+      const batchForMonth = list.find(b => b.month === month && b.year === year) || list[0] || null;
+      setExistingBatchForMonth(batchForMonth);
     } catch (e) {
       console.error('Failed to load batches:', e);
       setExistingBatches([]);
@@ -591,6 +595,7 @@ function AttendanceSheet() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [inlineLogs, setInlineLogs] = useState([]);
+  const [inlineOvertimeDaysFromApi, setInlineOvertimeDaysFromApi] = useState(null); // OT days from API (excess present + worked on paid leave/holiday)
   const [inlineLoading, setInlineLoading] = useState(false);
   const [inlineError, setInlineError] = useState("");
   const logsRequestEmpRef = useRef(null); // Track which employee's logs we requested (prevents race when switching employees)
@@ -809,6 +814,7 @@ function AttendanceSheet() {
       if (response && response.logs) {
         console.log('✅ Using new response format with logs and totals');
         setInlineLogs(Array.isArray(response.logs) ? response.logs : []);
+        setInlineOvertimeDaysFromApi(response.overtimeDays != null ? response.overtimeDays : null);
         setAttendanceTotals({
           totalOtDeductionMins: response.totalOtDeductionMins || 0,
           totalLateDeductionMins: response.totalLateDeductionMins || 0,
@@ -817,17 +823,20 @@ function AttendanceSheet() {
         console.log('📈 Totals set:', { 
           ot: response.totalOtDeductionMins || 0, 
           late: response.totalLateDeductionMins || 0,
-          early: response.totalEarlyDeductionMins || 0
+          early: response.totalEarlyDeductionMins || 0,
+          overtimeDays: response.overtimeDays
         });
       } else {
         console.log('⚠️ Using old response format (array)');
         setInlineLogs(Array.isArray(response) ? response : []);
+        setInlineOvertimeDaysFromApi(null);
         setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
       }
     } catch (e) {
       if (logsRequestEmpRef.current !== empCodeForRequest) return;
       setInlineError(e.message || "Failed to load logs");
       setInlineLogs([]);
+      setInlineOvertimeDaysFromApi(null);
       setAttendanceTotals({ totalOtDeductionMins: 0, totalLateDeductionMins: 0, totalEarlyDeductionMins: 0 });
     } finally {
       if (logsRequestEmpRef.current === empCodeForRequest) {
@@ -894,18 +903,21 @@ function AttendanceSheet() {
       loadInlineLogs();
     } else if (!selectedEmployee) {
       setInlineLogs([]);
+      setInlineOvertimeDaysFromApi(null);
       setInlineError("");
     }
   }, [activeTab, selectedEmployee, month, year]);
 
-  // Calculate summary from logs
+  // Calculate summary from logs; use API overtimeDays when available (includes worked on paid leave/holiday + excess present over threshold)
   const logsSummary = useMemo(() => {
     if (!inlineLogs.length) return null;
-    const present = inlineLogs.filter(l => l.status === 'PRESENT' || l.status === 'OT_DAY').length;
+    const present = inlineLogs.filter(l => l.status === 'PRESENT' || l.status === 'OT_DAY' || l.status === 'OVERTIME').length;
     const absent = inlineLogs.filter(l => l.status === 'ABSENT').length;
-    const weeklyOff = inlineLogs.filter(l => l.status === 'WEEKLY_OFF' || (l.isWeeklyOff && l.status !== 'OT_DAY')).length;
-    const holidays = inlineLogs.filter(l => l.status === 'HOLIDAY' || (l.isHoliday && l.status !== 'OT_DAY')).length;
-    const otDays = inlineLogs.filter(l => l.status === 'OT_DAY' || l.isOvertimeDay).length;
+    const weeklyOff = inlineLogs.filter(l => l.status === 'WEEKLY_OFF' || (l.isWeeklyOff && l.status !== 'OT_DAY' && l.status !== 'OVERTIME')).length;
+    const holidays = inlineLogs.filter(l => l.status === 'HOLIDAY' || (l.isHoliday && l.status !== 'OT_DAY' && l.status !== 'OVERTIME')).length;
+    const otDays = inlineOvertimeDaysFromApi != null
+      ? inlineOvertimeDaysFromApi
+      : inlineLogs.filter(l => l.status === 'OT_DAY' || l.status === 'OVERTIME' || l.isOvertimeDay || l.overtimeDay).length;
     const totalMins = inlineLogs.reduce((sum, l) => sum + (l.workMinutes || 0), 0);
     const dualShifts = inlineLogs.filter(l => l.dualShift).length;
     // Late/Early tracking - exclude approved days (no charges apply when approved)
@@ -934,7 +946,7 @@ function AttendanceSheet() {
       lateInDays: lateInDays.toFixed(2), // Late time equivalent in working days
       earlyInDays: earlyInDays.toFixed(2)
     };
-  }, [inlineLogs]);
+  }, [inlineLogs, inlineOvertimeDaysFromApi]);
 
   /** ===================== TAB 3: MONTHLY SUMMARY ===================== */
   const [summaryRows, setSummaryRows] = useState([]);
@@ -1037,68 +1049,37 @@ function AttendanceSheet() {
     );
   };
 
-  // Recalculate attendance state
+  // Single action: keep attendance in sync with shift and leave (sync leaves + full rebuild; preserves manual fixes)
   const [recalculating, setRecalculating] = useState(false);
   const [recalcResult, setRecalcResult] = useState(null);
-  const [rebuilding, setRebuilding] = useState(false);
 
-  const handleRecalculate = async () => {
-    if (!confirm(`This will sync attendance with leave records for ${MONTH_NAMES[month-1]} ${year}.\n\nThis is a lightweight sync that updates ABSENT days to LEAVE if leave exists.\n\nContinue?`)) {
+  const handleRecalculateAttendance = async () => {
+    if (!confirm(`Recalculate attendance for ${MONTH_NAMES[month - 1]} ${year}?\n\nThis will:\n• Sync with leave (ABSENT → LEAVE where leave exists)\n• Recalculate from punches with shift rules (late/early/rounding, OT)\n• Preserve manual IN/OUT fixes\n\nPast months cannot be changed. Continue?`)) {
       return;
     }
-    
     setRecalculating(true);
     setRecalcResult(null);
     try {
-      const resp = await fetch(`${API_BASE}/attendance/import/recalculate?month=${month}&year=${year}`, {
+      const resp = await fetch(`${API_BASE}/attendance/update-month?month=${month}&year=${year}`, {
         method: "POST",
-        headers: { 
+        headers: {
           "X-Tenant-Id": getTenantId(),
           "Authorization": `Bearer ${getToken()}`
         },
       });
-      if (!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = data.message || data.error || (typeof data === "string" ? data : "Request failed");
+        alert(msg);
+        return;
+      }
       setRecalcResult(data);
-      // Reload summary after recalculation
       await loadSummary();
+      if (selectedEmployee) await loadInlineLogs();
     } catch (e) {
-      alert("Recalculation failed: " + (e.message || "Unknown error"));
+      alert("Recalculate failed: " + (e.message || "Unknown error"));
     } finally {
       setRecalculating(false);
-    }
-  };
-
-  // Full rebuild - recalculates all attendance from punches with shift rules (late/early/rounding)
-  const handleRebuild = async () => {
-    if (!confirm(`⚠️ FULL REBUILD for ${MONTH_NAMES[month-1]} ${year}\n\nThis will recalculate ALL attendance from punches, applying:\n• Shift assignments\n• Late/Early tracking with rounding\n• Overtime calculations\n\nUse this after assigning shifts or changing shift rules.\n\nContinue?`)) {
-      return;
-    }
-    
-    setRebuilding(true);
-    setRecalcResult(null);
-    try {
-      const resp = await fetch(`${API_BASE}/attendance/import/rebuild?month=${month}&year=${year}`, {
-        method: "POST",
-        headers: { 
-          "X-Tenant-Id": getTenantId(),
-          "Authorization": `Bearer ${getToken()}`
-        },
-      });
-      if (!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
-      setRecalcResult(data);
-      // Reload data after rebuild
-      await loadSummary();
-      // Also reload the current employee's logs if one is selected
-      if (selectedEmployee) {
-        await loadInlineLogs();
-      }
-      alert("✅ Rebuild complete! Late/early tracking and rounding rules have been applied.\n\nPlease reload employee attendance to see updated data.");
-    } catch (e) {
-      alert("Rebuild failed: " + (e.message || "Unknown error"));
-    } finally {
-      setRebuilding(false);
     }
   };
 
@@ -1383,42 +1364,23 @@ function AttendanceSheet() {
             >
               🔄 Refresh
             </button>
-            <button 
-              onClick={handleRecalculate}
-              disabled={recalculating || rebuilding}
+            <button
+              onClick={handleRecalculateAttendance}
+              disabled={recalculating}
               className={`px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all ${
-                recalculating || rebuilding
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                  : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md hover:shadow-lg'
+                recalculating
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md hover:shadow-lg'
               }`}
-              title="Sync attendance with leave records"
+              title="Keep attendance in sync with shift and leave. Syncs leaves, recalculates from punches (late/early/rounding, OT), preserves manual punch fixes."
             >
               {recalculating ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Syncing...
+                  Recalculating…
                 </>
               ) : (
-                <>📋 Sync Leaves</>
-              )}
-            </button>
-            <button 
-              onClick={handleRebuild}
-              disabled={rebuilding || recalculating}
-              className={`px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all ${
-                rebuilding || recalculating
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                  : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md hover:shadow-lg'
-              }`}
-              title="Full rebuild: recalculate all attendance with shift rules (late/early/rounding)"
-            >
-              {rebuilding ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Rebuilding...
-                </>
-              ) : (
-                <>🔧 Full Rebuild</>
+                <>🔄 Recalculate attendance</>
               )}
             </button>
             {summaryLoading && <span className="text-sm text-slate-500 flex items-center gap-2">
@@ -1498,7 +1460,7 @@ function AttendanceSheet() {
           {!summaryLoading && !summaryError && (
             <div className="space-y-2">
               <p className="text-sm text-slate-600">
-                <strong>OT for payroll:</strong> <strong>OT Allowed</strong> = checkbox linked to employee setting (checked = enabled for payroll). Toggle to change. Or use <strong>Select</strong> column + <strong>Enable/Disable OT for selected</strong>. If a device shows no OT hours, run <strong>Full Rebuild</strong> so OT is recalculated (e.g. for employees without shift).
+                <strong>OT for payroll:</strong> <strong>OT Allowed</strong> = checkbox linked to employee setting (checked = enabled for payroll). Toggle to change. Or use <strong>Select</strong> column + <strong>Enable/Disable OT for selected</strong>. If a device shows no OT hours, run <strong>Recalculate attendance</strong> so OT is recalculated (e.g. for employees without shift).
               </p>
               <div className="border rounded overflow-x-auto">
               <table className="min-w-full border border-gray-300 text-sm">
@@ -1681,23 +1643,23 @@ function AttendanceSheet() {
             >
               📥 Export Excel
             </button>
-            <button 
-              onClick={handleRebuild}
-              disabled={rebuilding || recalculating}
+            <button
+              onClick={handleRecalculateAttendance}
+              disabled={recalculating}
               className={`px-4 py-2 rounded font-medium flex items-center gap-2 ${
-                rebuilding || recalculating
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                recalculating
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-purple-600 text-white hover:bg-purple-700'
               }`}
-              title="Rebuild attendance with shift rules (late/early/rounding)"
+              title="Keep attendance in sync with shift and leave. Preserves manual punch fixes."
             >
-              {rebuilding ? (
+              {recalculating ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Rebuilding...
+                  Recalculating…
                 </>
               ) : (
-                <>🔧 Rebuild (Apply Shifts)</>
+                <>🔄 Recalculate attendance</>
               )}
             </button>
           </div>

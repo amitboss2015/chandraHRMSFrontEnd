@@ -24,7 +24,6 @@ function PayrollGen() {
   const [lastGenerateResult, setLastGenerateResult] = useState(null); // { skippedMissingPunch, skippedNoAttendance }
   const [selectedPendingEmpCodes, setSelectedPendingEmpCodes] = useState([]); // empCodes selected for "generate for selected"
   const [generatingBatch, setGeneratingBatch] = useState(false);
-  const [deletingAll, setDeletingAll] = useState(false);
   const [skippedEmployees, setSkippedEmployees] = useState(null);
   const [showSkippedModal, setShowSkippedModal] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState({
@@ -57,16 +56,15 @@ function PayrollGen() {
   });
   // Edit modal removed - loans managed in loan management screen
 
-  /** Initial load: only devices + missing punch. No payroll data. Always fetch fresh missing punch so fixes reflect instantly when visiting. */
+  /** Initial load: only device list. No payroll fetch — blank landing. Payroll is fetched only when user selects a biometric device. */
   const loadInitial = async () => {
     try {
       setLoading(true);
-      const [devList, dashboard] = await Promise.all([
-        devicesApi.getList(true),
-        attendanceApi.getMissingPunchDashboard(month, year, true).catch(() => null),
-      ]);
-      setAllDevices(Array.isArray(devList) ? devList : []);
-      setMissingPunchInfo(dashboard);
+      const devList = await devicesApi.getList(true);
+      const devices = Array.isArray(devList) ? devList : [];
+      setAllDevices(devices);
+      setMissingPunchInfo(null);
+      // Do not auto-select device: keep __none__ so page stays blank until user selects a device
     } catch (e) {
       console.error('Failed to load initial data:', e);
       setMessage({ type: 'error', text: 'Failed to load devices' });
@@ -160,6 +158,7 @@ function PayrollGen() {
   }, [year, month]);
 
 
+  /** When user selects a biometric device, fetch payroll for that device and month/year. No call on landing (device stays unselected). */
   useEffect(() => {
     if (selectedDeviceCode !== '__none__') {
       loadPayrollData();
@@ -185,45 +184,53 @@ function PayrollGen() {
     } catch (_) {}
   }, [payrolls.length, year, month]);
 
-  const generatePayroll = async () => {
+  /** Regenerate payroll: delete existing for selected month/year and device, then generate fresh. Only the selected period is affected. */
+  const regeneratePayroll = async () => {
+    if (selectedDeviceCode === '__none__') {
+      setMessage({ type: 'warning', text: 'Select a biometric device first.' });
+      return;
+    }
+    const periodLabel = `${getMonthName(month)} ${year}`;
+    if (!confirm(`This will delete and regenerate payroll for ${periodLabel} only.\n\nOther months will not be affected.\n\nContinue?`)) {
+      return;
+    }
     try {
       setGenerating(true);
       setMessage(null);
       setLastGenerateResult(null);
-      const deviceCode = selectedDeviceCode === '__none__' || selectedDeviceCode === '' ? null : selectedDeviceCode;
+      const deviceCode = selectedDeviceCode === '' ? null : selectedDeviceCode;
+      // 1. Delete existing payrolls for this month/year and device only
+      try {
+        await payrollApi.deleteMonthly(year, month, '', deviceCode);
+      } catch (e) {
+        // Ignore if nothing to delete
+        if (e?.message && !e.message.includes('deleted')) console.warn('Delete before regenerate:', e.message);
+      }
+      // 2. Generate fresh payroll for this month/year only
       const data = await payrollApi.generate(year, month, '', deviceCode);
       const generatedList = data.payrolls && Array.isArray(data.payrolls) ? data.payrolls : [];
-      setMessage({ type: 'success', text: data.message || `Payroll generated for ${data.count ?? 0} employee(s).` });
+      setMessage({ type: 'success', text: data.message || `Payroll regenerated for ${data.count ?? 0} employee(s).` });
       const skip = { skippedMissingPunch: data.skippedMissingPunch || [], skippedNoAttendance: data.skippedNoAttendance || [] };
       setLastGenerateResult(skip);
       try { sessionStorage.setItem(`payrollPendingSkip_${getTenantId()}_${year}_${month}`, JSON.stringify(skip.skippedMissingPunch)); } catch (_) {}
       setAttendanceCheck(null);
-      // Instant reflection: set list from response so UI shows new payrolls immediately
       setPayrolls(generatedList);
-      // Clear all device caches and refetch (summary, bank transfer list, etc.)
       Object.keys(payrollCacheByDevice.current).forEach(k => {
         if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
       });
       await loadPayrollData(true);
-      // If refetch returned empty (e.g. device filter mismatch) but we had generated payrolls, restore list so UI reflects generation
       if (generatedList.length > 0) {
         setPayrolls(prev => (prev.length === 0 ? generatedList : prev));
         const cacheKey = cacheKeyForDevice(selectedDeviceCode);
-        payrollCacheByDevice.current[cacheKey] = {
-          ...payrollCacheByDevice.current[cacheKey],
-          payrolls: generatedList,
-        };
+        payrollCacheByDevice.current[cacheKey] = { ...payrollCacheByDevice.current[cacheKey], payrolls: generatedList };
       }
     } catch (error) {
-      console.error('Failed to generate payroll:', error);
+      console.error('Failed to regenerate payroll:', error);
       if (error.isAttendanceError) {
-        setMessage({ 
-          type: 'error', 
-          text: error.message || `Attendance not uploaded for ${getMonthName(month)} ${year}. Please upload attendance before generating payroll.`
-        });
+        setMessage({ type: 'error', text: error.message || `Attendance not uploaded for ${getMonthName(month)} ${year}. Please upload attendance first.` });
         setAttendanceCheck(error);
       } else {
-        setMessage({ type: 'error', text: error.message || 'Failed to generate payroll. Please try again.' });
+        setMessage({ type: 'error', text: error.message || 'Failed to regenerate payroll. Please try again.' });
       }
     } finally {
       setGenerating(false);
@@ -569,56 +576,6 @@ function PayrollGen() {
     }
   };
 
-  const deleteAllPayrolls = async () => {
-    const isDeviceScoped = selectedDeviceCode && selectedDeviceCode !== '__none__' && selectedDeviceCode !== '';
-    const confirmMsg = isDeviceScoped
-      ? `Delete payroll for ${displayedPayrolls.length} employee(s) in device "${deviceList.find(d => d.deviceCode === selectedDeviceCode)?.deviceName || selectedDeviceCode}" only?`
-      : 'Are you sure you want to delete ALL payrolls for this month?';
-    if (!confirm(confirmMsg)) return;
-    const idsToRemove = isDeviceScoped ? displayedPayrolls.map(p => p.id) : payrolls.map(p => p.id);
-    let deleteSucceeded = false;
-    try {
-      setDeletingAll(true);
-      setMessage(null);
-      const deviceCode = isDeviceScoped ? selectedDeviceCode : null;
-      const result = await payrollApi.deleteMonthly(year, month, '', deviceCode);
-      if (result && result.success !== false) {
-        deleteSucceeded = true;
-        setMessage({ type: 'success', text: result.message || 'Payroll deleted!' });
-        // Instant reflection: set list and summary to empty so UI shows no records immediately
-        setPayrolls([]);
-        setSummary(null);
-        setBankTransferData(prev => {
-          if (!prev?.devices) return prev;
-          return {
-            ...prev,
-            devices: prev.devices.map(d => ({
-              ...d,
-              employees: (d.employees || []).filter(e => !idsToRemove.includes(e.id))
-            }))
-          };
-        });
-      } else {
-        setMessage({ type: 'error', text: (result && result.error) || 'Failed to delete payrolls' });
-      }
-      // Clear all device caches and refetch
-      Object.keys(payrollCacheByDevice.current).forEach(k => {
-        if (k.startsWith(`${getTenantId()}_${year}_${month}_`)) delete payrollCacheByDevice.current[k];
-      });
-      await loadPayrollData(true);
-    } catch (error) {
-      console.error('Failed to delete payrolls:', error);
-      const errorMsg = error.error || error.message || 'Cannot delete payrolls (all must be in DRAFT status)';
-      setMessage({ type: 'error', text: errorMsg });
-    } finally {
-      if (deleteSucceeded) {
-        setPayrolls([]);
-        setSummary(null);
-      }
-      setDeletingAll(false);
-    }
-  };
-
   const formatCurrency = (amount) => {
     if (amount == null) return '₹0';
     return new Intl.NumberFormat('en-IN', { 
@@ -656,14 +613,14 @@ function PayrollGen() {
   const payrollIdsForDevice = selectedDeviceCode && selectedDeviceCode !== '__none__' && bankTransferData?.devices
     ? (bankTransferData.devices.find(d => d.deviceCode === selectedDeviceCode)?.employees || []).map(e => e.id)
     : null;
-  // When __none__ → no data; when "All" (empty) → show all payrolls; when device selected → filter by device
+  // When __none__ → no data; when "All" (empty) → show all payrolls; when device selected → filter by device (fallback to payrolls when no bank-transfer breakdown)
   const displayedPayrolls = selectedDeviceCode === '__none__'
     ? []
     : selectedDeviceCode === ""
     ? payrolls
     : (payrollIdsForDevice != null && payrollIdsForDevice.length > 0
         ? payrolls.filter(p => payrollIdsForDevice.includes(p.id))
-        : []);
+        : payrolls);
 
   // Summary derived from current list so counts match table and update instantly after Delete All / Generate
   const displaySummary = useMemo(() => {
@@ -706,18 +663,16 @@ function PayrollGen() {
   return (
     <div className="p-4 sm:p-6 max-w-[1600px] mx-auto relative">
       {/* Generating / Deleting / Loading overlay – blocks UI with clear waiting message */}
-      {(generating || generatingBatch || deletingAll || loading) && (
+      {(generating || generatingBatch || loading) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm mx-4 flex flex-col items-center gap-4">
             <div className={`animate-spin rounded-full h-14 w-14 border-4 ${
-              deletingAll ? 'border-red-200 border-t-red-600' : 
               loading ? 'border-blue-200 border-t-blue-600' : 
               'border-emerald-200 border-t-emerald-600'
             }`}></div>
             <p className="text-lg font-semibold text-slate-800">
-              {deletingAll ? 'Deleting payroll...' : 
-               loading ? 'Fetching payroll...' : 
-               generatingBatch ? 'Generating payroll for selected...' : 'Generating payroll...'}
+              {loading ? 'Fetching payroll...' : 
+               generatingBatch ? 'Generating payroll for selected...' : 'Regenerating payroll...'}
             </p>
             <p className="text-sm text-slate-500 text-center">
               Please wait. This may take a moment.
@@ -737,6 +692,7 @@ function PayrollGen() {
             className="border rounded px-3 py-2 bg-white min-w-[180px]"
           >
             <option value="__none__">Select biometric device...</option>
+            <option value="">All devices</option>
             {deviceList.map((d) => (
               <option key={d.deviceCode} value={d.deviceCode}>
                 {d.deviceName || d.deviceCode}
@@ -782,16 +738,16 @@ function PayrollGen() {
         )}
         {selectedDeviceCode !== '__none__' && payrolls.length === 0 && !loading && attendanceCheck == null && (
           <div className="px-4 py-2 bg-slate-100 border border-slate-200 rounded text-slate-700 text-sm">
-            Unable to verify attendance. Click Refresh to try again.
+            Unable to verify attendance. Click Regenerate Payroll to try again.
           </div>
         )}
         <button
-          onClick={generatePayroll}
+          onClick={regeneratePayroll}
           disabled={generating || selectedDeviceCode === '__none__' || (payrolls.length === 0 && !attendanceCheck?.available)}
           className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          title={selectedDeviceCode === '__none__' ? 'Select a biometric device first' : (payrolls.length === 0 && !attendanceCheck?.available ? (attendanceCheck?.message || "Import attendance first") : undefined)}
+          title={selectedDeviceCode === '__none__' ? 'Select a biometric device first' : (payrolls.length === 0 && !attendanceCheck?.available ? (attendanceCheck?.message || "Import attendance first") : `Delete and regenerate payroll for ${getMonthName(month)} ${year} only. Other months are not affected.`)}
         >
-          {generating ? '⏳ Generating...' : '📊 Generate Payroll'}
+          {generating ? '⏳ Regenerating...' : `🔄 Regenerate Payroll (${getMonthName(month)} ${year})`}
         </button>
         {payrolls.length > 0 && (
           <>
@@ -801,13 +757,6 @@ function PayrollGen() {
             >
               ✓ Approve All
             </button>
-            {/* Pay All feature disabled - will be launched later */}
-            {/* <button
-              onClick={() => { setSelectedPayroll(null); setShowPaymentModal(true); }}
-              className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 font-medium"
-            >
-              💳 Pay All
-            </button> */}
             <button
               onClick={handleExportExcel}
               disabled={payrolls.length === 0}
@@ -816,25 +765,8 @@ function PayrollGen() {
             >
               📥 Export Excel
             </button>
-            <button
-              onClick={deleteAllPayrolls}
-              disabled={deletingAll}
-              className="bg-red-100 text-red-700 px-4 py-2 rounded hover:bg-red-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {deletingAll ? '⏳ Deleting...' : '🗑️ Delete All'}
-            </button>
           </>
         )}
-        <button
-          onClick={() => {
-            loadInitial();
-            if (selectedDeviceCode !== '__none__') loadPayrollData(true);
-          }}
-          className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200"
-          title="Refresh (bypass cache)"
-        >
-          🔄 Refresh
-        </button>
       </div>
 
       {/* All clear – compact */}
@@ -1211,15 +1143,21 @@ function PayrollGen() {
         </div>
       )}
 
-      {/* Payroll Table */}
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
+      {/* Payroll Table: blank on landing until a device is selected; then loading / empty / table */}
+      {selectedDeviceCode === '__none__' ? (
+        <div className="text-center py-16 text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+          <p className="text-lg font-medium">Select a biometric device to view or generate payroll</p>
+          <p className="text-sm mt-2">Choose a device from the dropdown above; data will load for the selected month and year.</p>
+        </div>
+      ) : loading ? (
+        <div className="flex flex-col items-center justify-center h-64 gap-3">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-sm text-slate-500">Loading payroll for {getMonthName(month)} {year}…</p>
         </div>
       ) : payrolls.length === 0 ? (
         <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg">
           <p className="text-lg">No payroll data for {getMonthName(month)} {year}</p>
-          <p className="text-sm mt-2">Click "Generate Payroll" to create payroll for this month.</p>
+          <p className="text-sm mt-2">Click &quot;Regenerate Payroll&quot; to create payroll for this month.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">

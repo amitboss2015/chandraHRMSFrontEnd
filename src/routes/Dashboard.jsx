@@ -141,13 +141,6 @@ function Dashboard() {
     }
   };
 
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
   const formatCurrency = (val) => {
     if (!val) return '₹0';
     return new Intl.NumberFormat('en-IN', {
@@ -198,14 +191,6 @@ function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50/80">
       <div className="max-w-[1600px] mx-auto px-4 py-6 md:px-6 md:py-8">
-        {/* Page header */}
-        <header className="mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Dashboard</h1>
-            <p className="text-slate-500 text-sm">{currentDate}</p>
-          </div>
-        </header>
-
         {/* Workflow - primary CTA */}
         <section className="mb-8">
           <WorkflowHeader />

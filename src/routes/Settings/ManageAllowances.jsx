@@ -100,18 +100,19 @@ export default function ManageAllowances() {
   };
 
   const assign = async () => {
-    if (!selectedTypeId || selectedEmpIds.size === 0) {
-      setMessage({ type: "warning", text: "Select an allowance type and at least one employee" });
+    if (!selectedTypeId) {
+      setMessage({ type: "warning", text: "Select an allowance type" });
       return;
     }
     setActionLoading(true);
     setMessage(null);
     try {
       const res = await allowanceApi.bulkAssign(Number(selectedTypeId), [...selectedEmpIds]);
-      setMessage({ type: "success", text: res.message || `Assigned to ${res.assignedCount} employee(s)` });
+      const n = res.assignedCount ?? selectedEmpIds.size;
+      setMessage({ type: "success", text: n === 0 ? "Assignment updated (no employees assigned)." : `Assignment updated: ${n} employee(s) assigned.` });
       loadAssignedIds(selectedTypeId);
     } catch (e) {
-      setMessage({ type: "error", text: e.message || "Failed to assign" });
+      setMessage({ type: "error", text: e.message || "Failed to save assignment" });
     } finally {
       setActionLoading(false);
     }
@@ -191,6 +192,8 @@ export default function ManageAllowances() {
                   {allowanceTypes.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({formatCurrency(t.amount)}/{t.calculationBasis === "PER_DAY" ? "day" : "month"})
+                      {t.shiftCodeFilter ? ` • Shift: ${t.shiftCodeFilter}` : ""}
+                      {t.minWorkMinutesForEligibility ? ` • Min ${t.minWorkMinutesForEligibility} mins` : ""}
                     </option>
                   ))}
                 </select>
@@ -244,7 +247,7 @@ export default function ManageAllowances() {
                   onClick={assign}
                   disabled={actionLoading || selectedEmpIds.size === 0}
                 >
-                  {actionLoading ? "..." : `Assign to Selected (${selectedEmpIds.size})`}
+                  {actionLoading ? "..." : `Save assignment (${selectedEmpIds.size} selected)`}
                 </button>
                 <button
                   className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 font-medium"
