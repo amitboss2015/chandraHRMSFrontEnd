@@ -1,5 +1,5 @@
 // Dashboard.jsx - Comprehensive dashboard with actionable insights
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePeriodSelection, getStoredPeriod } from '../utils/monthYearState';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import WorkflowHeader from '../components/WorkflowHeader';
@@ -64,6 +64,8 @@ function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
+  const [todayPunches, setTodayPunches] = useState(null);
+  const [todayPunchesLoading, setTodayPunchesLoading] = useState(false);
   const { month: selectedMonth, year: selectedYear, setMonth: setSelectedMonth, setYear: setSelectedYear, setPeriod } = usePeriodSelection();
   const [availableMonths, setAvailableMonths] = useState([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -73,6 +75,22 @@ function Dashboard() {
   useEffect(() => {
     fetchAvailableMonths();
   }, []);
+
+  const loadTodayPunches = useCallback(async () => {
+    setTodayPunchesLoading(true);
+    try {
+      const data = await fetchApi(`${API_BASE}/attendance/today-punches`);
+      setTodayPunches(data);
+    } catch {
+      setTodayPunches(null);
+    } finally {
+      setTodayPunchesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTodayPunches();
+  }, [loadTodayPunches]);
 
   // Load dashboard data when month/year changes (but prevent duplicate calls)
   useEffect(() => {
@@ -504,6 +522,70 @@ function Dashboard() {
                 </div>
               ) : (
                 <EmptyState icon="💵" message="No payroll data" />
+              )}
+            </div>
+
+            {/* Today's punches (live from attendance_punch — device/API ingest) */}
+            <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4 flex flex-col min-h-0">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">Today&apos;s attendance</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {todayPunches?.date
+                      ? `${todayPunches.date} · newest first`
+                      : 'Live punches for today'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadTodayPunches()}
+                  disabled={todayPunchesLoading}
+                  className="min-h-[36px] min-w-[36px] px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50 flex items-center justify-center"
+                  title="Refresh"
+                  aria-label="Refresh today&apos;s punches"
+                >
+                  <span
+                    className={`inline-block text-lg ${todayPunchesLoading ? 'animate-spin' : ''}`}
+                    aria-hidden
+                  >
+                    ↻
+                  </span>
+                </button>
+              </div>
+              {todayPunchesLoading && !todayPunches ? (
+                <p className="text-xs text-slate-500 py-6 text-center">Loading punches…</p>
+              ) : !todayPunches || todayPunches.punches?.length === 0 ? (
+                <EmptyState icon="🕐" message="No punches recorded yet today." />
+              ) : (
+                <ul className="space-y-2 max-h-64 overflow-y-auto pr-1 -mr-1">
+                  {todayPunches.punches.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 px-2.5 rounded-lg bg-slate-50/90 border border-slate-100"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {p.employeeName || '—'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {p.empCode ? `${p.empCode}` : '—'}
+                          {p.deviceId ? ` · ${p.deviceId}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-semibold text-emerald-700 tabular-nums">{p.punchTime}</p>
+                        {p.source && (
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wide">{p.source}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {todayPunches?.truncated && (
+                <p className="text-[10px] text-amber-700 mt-2">
+                  Showing {todayPunches.count} of {todayPunches.totalToday} punches (limit applied).
+                </p>
               )}
             </div>
 

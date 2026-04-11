@@ -44,6 +44,8 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
   const [companyDataCounts, setCompanyDataCounts] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
+  const [extendTrialTarget, setExtendTrialTarget] = useState(null);
+  const [extendDaysInput, setExtendDaysInput] = useState('30');
   const [deleteReason, setDeleteReason] = useState('');
   const [confirmText, setConfirmText] = useState('');
   
@@ -195,17 +197,32 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
     }
   };
 
-  const extendTrial = async (tenantId) => {
-    const days = prompt('Enter number of days to extend:', '7');
-    if (!days || isNaN(days)) return;
-    
+  const openExtendTrialModal = (trial) => {
+    setExtendTrialTarget(trial);
+    setExtendDaysInput('30');
+  };
+
+  const submitExtendTrial = async () => {
+    if (!extendTrialTarget) return;
+    const days = parseInt(extendDaysInput, 10);
+    if (!Number.isFinite(days) || days < 1 || days > 3650) {
+      alert('Enter a valid number of days (1–3650).');
+      return;
+    }
+    const tenantId = extendTrialTarget.tenantId;
     setActionLoading(tenantId);
     try {
-      await fetchApi(`/api/admin/trials/${tenantId}/extend?days=${days}&extendedBy=${user?.email || 'Admin'}`, {
+      const tid = encodeURIComponent(tenantId);
+      const by = encodeURIComponent(user?.email || 'Admin');
+      await fetchApi(`/api/admin/trials/${tid}/extend?days=${days}&extendedBy=${by}`, {
         method: 'POST',
       });
       const trialsData = await fetchApi('/api/admin/trials');
       setTrials(trialsData);
+      setExtendTrialTarget(null);
+      alert(
+        `Trial extended by ${days} day(s). License end date was updated so company users can sign in again.`
+      );
     } catch (err) {
       alert('Failed to extend: ' + err.message);
     } finally {
@@ -602,8 +619,8 @@ const SuperAdminDashboard = ({ tab = 'overview' }) => {
                               <>
                                 <button 
                                   className="btn-extend" 
-                                  onClick={() => extendTrial(trial.tenantId)}
-                                  title="Extend Trial">
+                                  onClick={() => openExtendTrialModal(trial)}
+                                  title="Extend trial & license (allows login again)">
                                   ➕
                                 </button>
                                 <button 
@@ -1211,6 +1228,75 @@ Submitted: ${submission.uploadedAt ? new Date(submission.uploadedAt).toLocaleStr
           </div>
         )}
       </section>
+
+      {/* Extend trial + license (login) modal */}
+      {extendTrialTarget && (
+        <div className="modal-overlay" onClick={() => !actionLoading && setExtendTrialTarget(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>⏱️ Extend trial & license</h2>
+              <button
+                type="button"
+                className="close-btn"
+                disabled={!!actionLoading}
+                onClick={() => setExtendTrialTarget(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="company-preview">
+                <div className="preview-logo">
+                  {extendTrialTarget.companyName?.charAt(0)?.toUpperCase() || '?'}
+                </div>
+                <div className="preview-info">
+                  <h3>{extendTrialTarget.companyName}</h3>
+                  <p>{extendTrialTarget.tenantId}</p>
+                  <p style={{ opacity: 0.85, fontSize: '0.9rem' }}>{extendTrialTarget.adminEmail}</p>
+                </div>
+              </div>
+              <p className="modal-info" style={{ marginTop: '0.75rem' }}>
+                Updates <strong>trial end</strong> and the <strong>license</strong> row used at login, so expired
+                companies can sign in again after extension.
+              </p>
+              <div className="form-group">
+                <label htmlFor="extend-days">Additional days</label>
+                <input
+                  id="extend-days"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={extendDaysInput}
+                  onChange={(e) => setExtendDaysInput(e.target.value)}
+                  disabled={!!actionLoading}
+                />
+                <small>
+                  Current period ends: {extendTrialTarget.trialEndDate}. New end = that date + days.
+                </small>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                disabled={!!actionLoading}
+                onClick={() => setExtendTrialTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-confirm-delete"
+                style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                disabled={!!actionLoading}
+                onClick={submitExtendTrial}
+              >
+                {actionLoading ? 'Extending…' : 'Extend trial'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Soft Delete Modal */}
       {showDeleteModal && selectedCompany && (
