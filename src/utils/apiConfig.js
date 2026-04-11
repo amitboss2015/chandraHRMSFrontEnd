@@ -17,3 +17,21 @@ export const getApiBase = () => {
 
 export const API_BASE = getApiBase();
 export const DEFAULT_TENANT_ID = 'SASA001';
+
+/** Public backend hint (no JWT). Backend: GET /api/public/client-config */
+export async function fetchPublicClientConfig() {
+  const base = getApiBase();
+  try {
+    const r = await fetch(`${base}/public/client-config`);
+    if (!r.ok) return {};
+    return await r.json();
+  } catch {
+    return {};
+  }
+}
+
+/** Face-attendance web app URL: VITE_FACE_ATTENDANCE_URL, else backend client-config, else ''. */
+export function getFaceAttendanceUrlSync() {
+  const v = (import.meta.env?.VITE_FACE_ATTENDANCE_URL || '').trim();
+  return v ? trimTrailingSlash(v) : '';
+}

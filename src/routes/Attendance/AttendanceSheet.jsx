@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePeriodSelection } from "../../utils/monthYearState";
 import TemplateSampleDisplay from "../../components/TemplateSampleDisplay";
+import { fetchPublicClientConfig, getFaceAttendanceUrlSync } from "../../utils/apiConfig";
 
 /** ======= CONFIG ======= */
 const getApiBase = () => {
@@ -162,7 +163,25 @@ function AttendanceSheet() {
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab());
-  
+  const [faceAttendanceUrl, setFaceAttendanceUrl] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const envUrl = getFaceAttendanceUrlSync();
+      if (envUrl) {
+        if (!cancelled) setFaceAttendanceUrl(envUrl);
+        return;
+      }
+      const cfg = await fetchPublicClientConfig();
+      const u = (cfg.faceAttendancePublicUrl || "").trim().replace(/\/+$/, "");
+      if (!cancelled) setFaceAttendanceUrl(u);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Update tab when URL changes
   useEffect(() => {
     const tab = getInitialTab();
@@ -1193,6 +1212,21 @@ function AttendanceSheet() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-800">✅ Attendance Management</h1>
         <p className="text-slate-500 text-sm mt-1">Import, view and manage employee attendance</p>
+        {faceAttendanceUrl ? (
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900">
+            <span className="font-medium">Face attendance: </span>
+            Opens the live camera app in a new tab. Punches still go through this HRMS backend.
+            {" "}
+            <a
+              href={faceAttendanceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-emerald-700 underline hover:text-emerald-900"
+            >
+              Open face attendance
+            </a>
+          </div>
+        ) : null}
       </div>
 
       {/* Tabs */}
